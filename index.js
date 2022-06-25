@@ -28,32 +28,15 @@ const timeOutput = document.getElementById('time');
     })
   ).handlers;
 
-  function setupBtn(id) {
-    // Handlers are named in the same way as buttons.
-    let handler = handlers[id];
-    // If handler doesn't exist, it's not supported.
-    if (!handler) 
-      console.error(`handler ${id} missing`);
-    // Assign onclick handler + enable the button.
-    Object.assign(document.getElementById(id), {
-      async onclick() {
-        let { rawImageData, time } = await handler({
-          width,
-          height,
-          maxIterations
-        });
-        timeOutput.value = `${time.toFixed(2)} ms`;
-        const imgData = new ImageData(rawImageData, width, height);
-        ctx.putImageData(imgData, 0, 0);
-      },
-      disabled: false
-    });
-  }
+  Object.assign(document.getElementById('cmplxSimd'), {
+    async onclick() {
+      const input = new Float32Array(4*100000).map(() => Math.random())
 
-  // setupBtn('singleThread');
-  if (await handlers.supportsThreads) {
-    setupBtn('multiThread');
-  } else {
-    console.error('threads not supported')
-  }
+      let res0 = await handlers.cmplxMult({ input });
+      let res1 = await handlers.cmplxMultSimd({ input });
+      timeOutput.value = `Reg: ${res0.time.toFixed(2)} ms, SIMD: ${res1.time.toFixed(2)} ms`;
+      // console.log(res0.data)
+      // console.log(res1.data)
+    }
+  })
 })();
