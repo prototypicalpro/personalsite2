@@ -16,17 +16,14 @@ function wrapExports({ generate }) {
 }
 
 async function initHandlers() {
-  let [singleThread, multiThread] = await Promise.all([
-    (async () => {
-      const singleThread = await import('./pkg/wasm_bindgen_rayon_demo.js');
-      await singleThread.default();
-      return wrapExports(singleThread);
-    })(),
+  // TODO: throw if no threads
+
+  let [multiThread] = await Promise.all([
     (async () => {
       // If threads are unsupported in this browser, skip this handler.
       if (!(await threads())) return;
       const multiThread = await import(
-        './pkg-parallel/wasm_bindgen_rayon_demo.js'
+        './pkg/wasm_bindgen_rayon_demo.js'
       );
       await multiThread.default();
       await multiThread.initThreadPool(navigator.hardwareConcurrency);
@@ -35,7 +32,6 @@ async function initHandlers() {
   ]);
 
   return Comlink.proxy({
-    singleThread,
     supportsThreads: !!multiThread,
     multiThread
   });

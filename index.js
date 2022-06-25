@@ -32,7 +32,8 @@ const timeOutput = document.getElementById('time');
     // Handlers are named in the same way as buttons.
     let handler = handlers[id];
     // If handler doesn't exist, it's not supported.
-    if (!handler) return;
+    if (!handler) 
+      console.error(`handler ${id} missing`);
     // Assign onclick handler + enable the button.
     Object.assign(document.getElementById(id), {
       async onclick() {
@@ -49,8 +50,10 @@ const timeOutput = document.getElementById('time');
     });
   }
 
-  setupBtn('singleThread');
+  // setupBtn('singleThread');
   if (await handlers.supportsThreads) {
     setupBtn('multiThread');
+  } else {
+    console.error('threads not supported')
   }
 })();
