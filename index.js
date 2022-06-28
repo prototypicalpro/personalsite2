@@ -39,4 +39,15 @@ const timeOutput = document.getElementById('time');
       // console.log(res1.data)
     }
   })
+
+  Object.assign(document.getElementById('fft'), {
+    async onclick() {
+      const input = new Float32Array(512).map((_, i) => i);
+
+      let res = await handlers.fft({ pts: input });
+      console.log(res);
+      // console.log(res0.data)
+      // console.log(res1.data)
+    }
+  })
 })();
