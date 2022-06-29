@@ -17,8 +17,8 @@ mod const_twid;
 
 use bitshuffle::BitShuffleIteratorTrait;
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// #[global_allocator]
+// static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 
 
@@ -153,22 +153,20 @@ fn n_point_butterfly(ray: &mut [wasm32::v128], twiddles: &[(f32, f32)]) {
     }
 }
 
-const PTS: usize = 512;
+const PTS: usize = 1024;
 
-#[wasm_bindgen]
-pub fn fft(pts: &[f32]) -> Vec<f32> {
+fn fft_1d(pts: &[f32]) -> ArrayVec<f32, PTS> {
     const N: usize = PTS / 2;
     const ITERATIONS: usize = N.log2() as usize;
     const N_2: usize = N / 2;
     const TWIDDLES: [(f32, f32); N_2] = const_twid::TWIDDLE_LOOKUP;
     assert!(pts.len() == PTS);
 
-    let vec: ArrayVec<f32, PTS> = pts.try_into().unwrap();
-    let mut pass: ArrayVec<wasm32::v128, N_2> = vec
+    let mut pass: ArrayVec<wasm32::v128, N_2> = pts
         .into_iter()
         // [a, b, ...] -> [{a, b, a, b}, ...]
         .tuples::<(_, _)>()
-        .map(|(r, c)| wasm32::f32x4(r, c, r, c))
+        .map(|(r, c)| wasm32::f32x4(*r, *c, *r, *c))
         // sort by bit reversal
         .shuffle_iterator::<ITERATIONS, N>()
         // 2-pt DFT on each element -> [{a, b, c, d}, ...]
@@ -179,7 +177,7 @@ pub fn fft(pts: &[f32]) -> Vec<f32> {
     for i in 1..ITERATIONS {
         let chunk_size = 2_usize.pow(i as u32);
         // for every chunk compute butterfly sum
-        web_sys::console::log_2(&"Pass:".into(), &chunk_size.to_string().into());
+        // web_sys::console::log_2(&"Pass:".into(), &chunk_size.to_string().into());
         for chunk in pass.chunks_exact_mut(chunk_size) {
             assert!(chunk.len() > 1);
             n_point_butterfly(chunk, &TWIDDLES);
@@ -192,6 +190,28 @@ pub fn fft(pts: &[f32]) -> Vec<f32> {
         .flat_map(unpack_f32)
         .collect()
     // TODO: probably fastest to copy it directly into a GL buffer
+}
+
+#[wasm_bindgen]
+pub fn fft_2d(pts: &[f32]) -> Vec<f32> {
+    const N: usize = PTS / 2;
+    const N2_SQR: usize = N * N * 2;
+    assert!(pts.len() == N2_SQR);
+
+    web_sys::console::time();
+
+    let ret: Vec<f32> = pts
+        // compute FFT per row
+        .chunks_exact(PTS)
+        .map(|c| fft_1d(c))
+        // compute FFT per col
+        // TODO: transpose
+        .flat_map(|r| fft_1d(r.as_slice()))
+        .collect();
+    
+    web_sys::console::time_end();
+
+    ret
 }
 
 #[wasm_bindgen]

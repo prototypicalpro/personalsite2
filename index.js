@@ -42,9 +42,9 @@ const timeOutput = document.getElementById('time');
 
   Object.assign(document.getElementById('fft'), {
     async onclick() {
-      const input = new Float32Array(new Array(256).fill(0).flatMap((_, i) => [i, i]));
+      const input = new Float32Array(new Array(512*512).fill(0).flatMap((_, i) => [i, i]));
 
-      let res = await handlers.fft({ pts: input });
+      let res = await handlers.fft_2d({ pts: input });
       console.log(res);
       let res_unpacked = []
       for (let i = 0; i < res.data.length / 2; i++) {

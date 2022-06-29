@@ -30,7 +30,7 @@ async function initHandlers() {
     supportsThreads: hasThreads,
     cmplxMult: wrapFunc(multiThread.test_cmplx),
     cmplxMultSimd: wrapFunc(multiThread.test_cmplx_simd),
-    fft: wrapFunc(multiThread.fft),
+    fft_2d: wrapFunc(multiThread.fft_2d),
     test_multiply_cmplx2: wrapFunc(multiThread.test_multiply_cmplx2)
   });
 }
