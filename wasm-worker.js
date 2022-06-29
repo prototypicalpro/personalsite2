@@ -20,7 +20,7 @@ async function initHandlers() {
   // TODO: throw if no threads
   const hasThreads = await threads();
   const multiThread = await import(
-    './pkg/wasm_bindgen_rayon_demo.js'
+    './pkg/index.js'
   );
 
   await multiThread.default();
@@ -30,7 +30,8 @@ async function initHandlers() {
     supportsThreads: hasThreads,
     cmplxMult: wrapFunc(multiThread.test_cmplx),
     cmplxMultSimd: wrapFunc(multiThread.test_cmplx_simd),
-    fft: wrapFunc(multiThread.fft)
+    fft: wrapFunc(multiThread.fft),
+    test_multiply_cmplx2: wrapFunc(multiThread.test_multiply_cmplx2)
   });
 }
 

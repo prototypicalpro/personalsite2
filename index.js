@@ -42,9 +42,23 @@ const timeOutput = document.getElementById('time');
 
   Object.assign(document.getElementById('fft'), {
     async onclick() {
-      const input = new Float32Array(512).map((_, i) => i);
+      const input = new Float32Array(new Array(256).fill(0).flatMap((_, i) => [i, i]));
 
       let res = await handlers.fft({ pts: input });
+      console.log(res);
+      let res_unpacked = []
+      for (let i = 0; i < res.data.length / 2; i++) {
+        res_unpacked.push([res.data[i*2], res.data[i*2+1]]);
+      }
+      console.log(res_unpacked);
+      // console.log(res0.data)
+      // console.log(res1.data)
+    }
+  })
+
+  Object.assign(document.getElementById('cmplx2'), {
+    async onclick() {
+      let res = await handlers.test_multiply_cmplx2({a: -1, b: 1, c: -1, d: 1});
       console.log(res);
       // console.log(res0.data)
       // console.log(res1.data)
