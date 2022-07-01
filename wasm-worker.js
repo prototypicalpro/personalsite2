@@ -26,6 +26,8 @@ async function initHandlers() {
   await multiThread.default();
   await multiThread.initThreadPool(navigator.hardwareConcurrency);
 
+  // const fixFFTInput = (real, complex) => { multiThread.fft_2d(new multiThread.Ret2D(real, complex)) };
+
   return Comlink.proxy({
     supportsThreads: hasThreads,
     cmplxMult: wrapFunc(multiThread.test_cmplx),

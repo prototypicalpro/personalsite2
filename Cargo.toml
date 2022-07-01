@@ -28,11 +28,13 @@ wasm-opt = false
 [profile.release]
 lto = true
 debug = true
+opt-level = 3
 # panic = "abort" # TODO: enable for release with -Z -Z build-std-features=panic_immediate_abort
 
 [profile.dev]
 lto = true
 debug = true
+opt-level = 3
 
 [build]
 target = "wasm32-unknown-unknown"

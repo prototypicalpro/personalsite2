@@ -44,7 +44,8 @@ const timeOutput = document.getElementById('time');
     async onclick() {
       const input = new Float32Array(new Array(512*512).fill(0).flatMap((_, i) => [i, i]));
 
-      let res = await handlers.fft_2d({ pts: input });
+      let res = await handlers.fft_2d({pts: input});
+      timeOutput.value = `Time: ${res.time.toFixed(2)} ms`;
       console.log(res);
       let res_unpacked = []
       for (let i = 0; i < res.data.length / 2; i++) {
@@ -60,6 +61,7 @@ const timeOutput = document.getElementById('time');
     async onclick() {
       let res = await handlers.test_multiply_cmplx2({a: -1, b: 1, c: -1, d: 1});
       console.log(res);
+      timeOutput.value = `Time: ${res.time.toFixed(2)} ms`;
       // console.log(res0.data)
       // console.log(res1.data)
     }
