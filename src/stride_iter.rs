@@ -69,9 +69,9 @@ impl<T: Clone> StrideIteratorTrait for T where T: ExactSizeIterator { }
 
 #[derive(Debug, Clone)]
 pub struct FFTStepRange {
-    pub start: usize,
-    pub end: usize,
-    pub shift: usize,
+    start: usize,
+    end: usize,
+    shift: usize,
 }
 
 impl FFTStepRange {

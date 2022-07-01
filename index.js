@@ -56,14 +56,4 @@ const timeOutput = document.getElementById('time');
       // console.log(res1.data)
     }
   })
-
-  Object.assign(document.getElementById('cmplx2'), {
-    async onclick() {
-      let res = await handlers.test_multiply_cmplx2({a: -1, b: 1, c: -1, d: 1});
-      console.log(res);
-      timeOutput.value = `Time: ${res.time.toFixed(2)} ms`;
-      // console.log(res0.data)
-      // console.log(res1.data)
-    }
-  })
 })();
