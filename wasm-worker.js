@@ -30,8 +30,6 @@ async function initHandlers() {
 
   return Comlink.proxy({
     supportsThreads: hasThreads,
-    cmplxMult: wrapFunc(multiThread.test_cmplx),
-    cmplxMultSimd: wrapFunc(multiThread.test_cmplx_simd),
     fft_2d: wrapFunc(multiThread.fft_2d),
   });
 }

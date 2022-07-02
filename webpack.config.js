@@ -21,7 +21,6 @@ module.exports = {
 		  { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
 		  { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
 		],
-    host: '127.0.0.1'
   },
   plugins: [
     new CopyPlugin({

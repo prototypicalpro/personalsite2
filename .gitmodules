@@ -1,3 +1,6 @@
 [submodule "lib/wasm-bindgen-rayon"]
 	path = lib/wasm-bindgen-rayon
 	url = https://github.com/GoogleChromeLabs/wasm-bindgen-rayon.git
+[submodule "lib/strided-rs"]
+	path = lib/strided-rs
+	url = git@github.com:prototypicalpro/strided-rs.git

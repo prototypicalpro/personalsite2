@@ -11,12 +11,17 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 use core::arch::wasm32;
 use itertools::Itertools;
 use std::{convert::*, f32::consts::{TAU, PI}};
+use strided::{Stride, MutStride, Strided, MutStrided, MutSubstrides};
+use arrayvec::ArrayVec;
 
 mod const_twid;
 mod stride_iter;
 mod tuples_exact;
 mod wavegen;
+mod gamma;
+mod cmplx;
 
+use cmplx::Complex;
 use stride_iter::FFTStepRange;
 
 // #[global_allocator]
@@ -35,18 +40,6 @@ impl<T, E> DiscreetUnwrap<T, E> for Result<T, E> {
             },
         }
     }
-}
-
-#[inline]
-fn multiply_complex(ab: (f32, f32), cd: (f32, f32)) -> (f32, f32) {
-    let (a, b) = ab;
-    let (c, d) = cd;
-    ((a*c - b*d), (b*c + a*d))
-}
-
-#[inline]
-fn add_complex(ab: (f32, f32), cd: (f32, f32)) -> (f32, f32) {
-    (ab.0 + cd.0, ab.1 + cd.1)
 }
 
 #[inline]
@@ -99,7 +92,7 @@ fn multiply_complex2_simd(ab: wasm32::v128, cd: wasm32::v128) -> wasm32::v128 {
     wasm32::i16x8_shuffle::<0, 1, 10, 11, 4, 5, 14, 15>(sub, add)
 }
 
-fn lookup_twiddle(idx: usize, half_n: usize, twiddles: &[(f32, f32)]) -> (f32, f32) {
+fn lookup_twiddle(idx: usize, half_n: usize, twiddles: &[Complex]) -> Complex {
     // lookup and return the vector
     let step = twiddles.len() / half_n;
     twiddles[idx * step]
@@ -110,112 +103,109 @@ fn lookup_twiddle(idx: usize, half_n: usize, twiddles: &[(f32, f32)]) -> (f32, f
 //}
 
 /// Writes the forward DFT of `input` to `output`.
-fn fft(input: &[f32], input_stride: FFTStepRange, output: &mut [f32], output_stride: FFTStepRange, twiddles: &[(f32, f32)]) {
+fn fft(input: Stride<Complex>, mut output: MutStride<Complex>, twiddles: &[Complex]) {
     // check it's a power of two.
-    // assert!(input_stride.len() == output_stride.len() && input_stride.len().count_ones() == 1, "input_stride = {}, output_stride = {}", input_stride.len(), output_stride.len());
+    // assert!(input.len() == output.len() && input.len().count_ones() == 1, "input_stride = {}, output_stride = {}", input.len(), output.len());
+    // web_sys::console::log_1(&input.len().to_string().into());
 
     // break early for a four point butterfly
     // log_stride(&input_stride);
-    if input_stride.len() == 4 {
-        unsafe {
-            let m: [(f32, f32); 4] = [
-                (*input.get_unchecked(input_stride.get(0)), *input.get_unchecked(input_stride.get(0) + 1)),
-                (*input.get_unchecked(input_stride.get(1)), *input.get_unchecked(input_stride.get(1) + 1)),
-                (*input.get_unchecked(input_stride.get(2)), *input.get_unchecked(input_stride.get(2) + 1)),
-                (*input.get_unchecked(input_stride.get(3)), *input.get_unchecked(input_stride.get(3) + 1)),
-            ];
-        
-            let (m1_j, m3_j) = ((-m[1].1, m[1].0), (-m[3].1, m[3].0));
-            *output.get_unchecked_mut(output_stride.get(0)    ) =  m[0].0 + m[1].0 + m[2].0 + m[3].0;
-            *output.get_unchecked_mut(output_stride.get(0) + 1) =  m[0].1 + m[1].1 + m[2].1 + m[3].1;
-            *output.get_unchecked_mut(output_stride.get(1)    ) =  m[0].0 - m1_j.0 - m[2].0 + m3_j.0;
-            *output.get_unchecked_mut(output_stride.get(2) + 1) =  m[0].1 - m1_j.1 - m[2].1 + m3_j.1;
-            *output.get_unchecked_mut(output_stride.get(2)    ) =  m[0].0 - m[1].0 + m[2].0 - m[3].0;
-            *output.get_unchecked_mut(output_stride.get(2) + 1) =  m[0].1 - m[1].1 + m[2].1 - m[3].1;
-            *output.get_unchecked_mut(output_stride.get(3)    ) =  m[0].0 + m1_j.0 - m[2].0 - m3_j.0;
-            *output.get_unchecked_mut(output_stride.get(3) + 1) =  m[0].1 + m1_j.1 - m[2].1 - m3_j.1;
-        }
+    if input.len() == 4 {
+        let m: [Complex; 4] = [input[0], input[1], input[2], input[3]];
+    
+        let (m1_j, m3_j) = (Complex(-m[1].1, m[1].0), Complex(-m[3].1, m[3].0));
+        output[0] = m[0] + m[1] + m[2] + m[3];
+        output[1] = m[0] - m1_j - m[2] + m3_j;
+        output[2] = m[0] - m[1] + m[2] - m[3];
+        output[3] = m[0] + m1_j - m[2] - m3_j;
         return;
     }
 
     // split the input into two arrays of alternating elements ("decimate in time")
-    let (evens_stride, odds_stride) = input_stride.stride_2();
+    let (evens, odds) = input.substrides2();
     // break the output into two halves (front and back, not alternating)
-    let (start_stride, end_stride) = output_stride.split();
-    // log_stride(&start_stride);
-    // log_stride(&end_stride);
-    let half_len = start_stride.len();
+    let (mut start, mut end) = output.split_at_mut(input.len() / 2);
+    let half_len = start.len();
 
     // recursively perform two FFTs on alternating elements of the input, writing the
     // results into the first and second half of the output array respectively.
-    fft(input, evens_stride, output, start_stride.clone(), twiddles);
-    fft(input, odds_stride, output, end_stride.clone(), twiddles);
+    fft(evens, start.reborrow(), twiddles);
+    fft(odds, end.reborrow(), twiddles);
 
     // combine the subFFTs with the relations:
     //   X_k       = E_k + exp(-2πki/N) * O_k
     //   X_{k+N/2} = E_k - exp(-2πki/N) * O_k
-    for (i, (even, odd)) in start_stride.zip_eq(end_stride).enumerate() {
+    for (i, (even, odd)) in start.iter_mut().zip(end.iter_mut()).enumerate() {
         let twiddle = lookup_twiddle(i, half_len, twiddles);
-        let odd_twiddle = multiply_complex((output[odd], output[odd + 1]), twiddle);
-        let e = (output[even], output[even + 1]);
+        let odd_twiddle = *odd * twiddle;
+        let e = *even;
 
-        let even_num = add_complex(e, odd_twiddle);
-        let odd_num = add_complex(e, (-odd_twiddle.0, -odd_twiddle.1));
-
-        output[even] = even_num.0;
-        output[even + 1] = even_num.1;
-        output[odd] = odd_num.0;
-        output[odd + 1] = odd_num.1;
+        *even = e + odd_twiddle;
+        *odd = e - odd_twiddle;
     }
 }
 
-struct UnsafeBox(*mut f32);
-unsafe impl Send for UnsafeBox {}
-unsafe impl Sync for UnsafeBox {}
+struct UnsafeBox<T>(T);
+unsafe impl<T> Send for UnsafeBox<T> {}
+unsafe impl<T> Sync for UnsafeBox<T> {}
 
-const PTS: usize = 1024;
-const N: usize = PTS / 2;
+unsafe trait SendIGuess : Send {}
+// unsafe impl<T: Send + Sync> SendIGuess for MutSubstrides<'_, T> {}
+
+const N: usize = 512;
 const N_SQR: usize = N * N;
-const N2_SQR: usize = N * N * 2;
 
-fn fft_impl(input: &[f32]) -> Vec<f32> {
-    let mut output1: Vec<f32> = Vec::with_capacity(N2_SQR);
-    let unsafe_output;
-    unsafe { 
-        output1.set_len(N2_SQR);
-        unsafe_output = UnsafeBox(output1.as_mut_ptr());
-    }
+fn fft_impl(input: &[Complex], output: &mut [Complex]) {
+    // let mut output1: Vec<Complex> = Vec::with_capacity(N);
+    let mut output_strides: ArrayVec<_, N> = output
+        .as_stride_mut()
+        .substrides_mut(N)
+        .collect();
 
-    (0..N).zip_eq(0..N)
-        .par_bridge()
-        .into_par_iter()
+    input
+        .par_chunks(N)
+        .zip_eq(output_strides.par_iter_mut())
         .for_each(|(input_row, output_col)| {
-                // linear over row
-                let input_stride = FFTStepRange::new(input_row*2*N, input_row*2*N + 2*N, 1);
-                // linear over col
-                let output_stride = FFTStepRange::new(output_col*2, N2_SQR + output_col*2, 10);
-                // unsafe copy of the output vector
-                let unsafe_slice;
-                unsafe { unsafe_slice = std::slice::from_raw_parts_mut(unsafe_output.0, output1.len()); }
-                fft(input, input_stride, unsafe_slice, output_stride, &TWIDDLE_LOOKUP);
-            });
-    
-    output1
+            fft(input_row.as_stride(), output_col.reborrow(), &TWIDDLE_LOOKUP);
+        });
+}
+
+fn fft_2d_impl(input: &[Complex]) -> Vec<Complex> {
+    let mut output1: Vec<Complex> = vec![Complex(0.0, 0.0); N_SQR];
+    let mut output2: Vec<Complex> = vec![Complex(0.0, 0.0); N_SQR];
+    // unsafe { 
+    //     output1.set_len(N_SQR);
+    //     output2.set_len(N_SQR);
+    // }
+
+    web_sys::console::time();
+
+    fft_impl(&input, &mut output1);
+    fft_impl(&output1, &mut output2);
+
+    web_sys::console::time_end();
+
+    output2
 }
 
 #[wasm_bindgen]
 pub fn fft_2d(pts: &[f32]) -> Vec<f32> {
     console_error_panic_hook::set_once();
 
-    assert!(pts.len() == N2_SQR);
+    assert!(pts.len() == 2*N_SQR);
 
-    web_sys::console::time();
+    let input = pts
+        .into_iter()
+        .tuples::<(_, _)>()
+        .map(|(a, b)| Complex(*a, *b))
+        .collect_vec();
 
-    let input = pts;
-    let output1 = fft_impl(input);
-    let output2 = fft_impl(&output1);
+    assert!(input.len() == N_SQR);
    
-    web_sys::console::time_end();
+    let output = fft_2d_impl(&input);
 
-    output2
+    output
+        .into_iter()
+        .flat_map(|c| [c.0, c.1])
+        .collect()
 }
