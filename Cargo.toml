@@ -21,7 +21,8 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 rand_distr = "0.4.3"
 arrayvec = "0.7.2"
 strided = "0.2.9"
-web-sys = { version = "0.3.58", features = ['console'] }
+web-sys = { version = "0.3.58", features = ['console', 'CanvasRenderingContext2d', 'Document', 'Element', 'HtmlCanvasElement', 'Window', 'ImageData'] }
+js-sys = "0.3.58"
 
 # TODO: reenable wasm-opt as a separate pass
 [package.metadata.wasm-pack.profile.release]

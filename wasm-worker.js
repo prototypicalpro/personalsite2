@@ -5,12 +5,17 @@ import * as Comlink from 'comlink';
 function wrapFunc(f) {
   return (arg) => {
     const start = performance.now();
-    const data = f(...Object.values(arg));
+    let data;
+    if (arg) {
+      data = f(...Object.values(arg));
+    } else {
+      data = f();
+    }
     const time = performance.now() - start;
     // console.log(data);
     return {
       // Little perf boost to transfer data to the main thread w/o copying.
-      data: Comlink.transfer(data, [data.buffer]),
+      data: data ? Comlink.transfer(data, [data.buffer]) : {},
       time
     };
   };
@@ -23,14 +28,19 @@ async function initHandlers() {
     './pkg/index.js'
   );
 
-  await multiThread.default();
+  const stuff = await multiThread.default();
+  console.log(stuff.memory)
   await multiThread.initThreadPool(navigator.hardwareConcurrency);
 
   // const fixFFTInput = (real, complex) => { multiThread.fft_2d(new multiThread.Ret2D(real, complex)) };
+  let retbuf = new multiThread.RetBuf();
 
   return Comlink.proxy({
     supportsThreads: hasThreads,
+    memoryView: () => stuff.memory,
     fft_2d: wrapFunc(multiThread.fft_2d),
+    render: wrapFunc((...args) => multiThread.gen_and_paint_height_field(retbuf, ...args)),
+    setup: () => multiThread.gen_wavefield(retbuf),
   });
 }
 

@@ -28,6 +28,8 @@ const timeOutput = document.getElementById('time');
     })
   ).handlers;
 
+  console.log(await handlers.memoryView());
+
   Object.assign(document.getElementById('cmplxSimd'), {
     async onclick() {
       const input = new Float32Array(4*100000).map(() => Math.random())
@@ -54,6 +56,24 @@ const timeOutput = document.getElementById('time');
       console.log(res_unpacked);
       // console.log(res0.data)
       // console.log(res1.data)
+    }
+  })
+
+  Object.assign(document.getElementById('render'), {
+    async onclick() {
+
+      let res = await handlers.setup();
+      console.log(res);
+
+      let cb = async (t) => {
+        const render_res = await handlers.render({ time: t / 1000.0 });
+        timeOutput.value = `Time: ${render_res.time.toFixed(2)} ms`;
+
+        const imgData = new ImageData(render_res.data, 512, 512);
+        ctx.putImageData(imgData, 0, 0);
+        requestAnimationFrame(cb);
+      }
+      requestAnimationFrame(cb);
     }
   })
 })();

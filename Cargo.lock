@@ -396,6 +396,7 @@ dependencies = [
  "console_error_panic_hook",
  "getrandom",
  "itertools",
+ "js-sys",
  "rand",
  "rand_distr",
  "rayon",

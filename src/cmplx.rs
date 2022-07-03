@@ -8,9 +8,13 @@ unsafe impl Sync for Complex {}
 
 impl Complex {
     #[inline]
-    pub fn from_amp_phase(amp: f32, phase: f32) -> Complex {
+    pub fn from_polar(amp: f32, phase: f32) -> Complex {
         let cmplx = phase.sin_cos();
         Complex(cmplx.1 * amp, cmplx.0 * amp)
+    }
+
+    pub fn conj(self) -> Complex {
+        Complex(self.0, -self.1)
     }
 }
 
