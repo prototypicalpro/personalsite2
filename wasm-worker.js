@@ -34,10 +34,12 @@ async function initHandlers() {
 
   // const fixFFTInput = (real, complex) => { multiThread.fft_2d(new multiThread.Ret2D(real, complex)) };
   let retbuf = new multiThread.RetBuf();
+  let pos_out = retbuf.get_pos_out_ptr();
+  const pos_length = 512*512*3*4; // 512x512 grid of (f32, f32, f32)
 
   return Comlink.proxy({
     supportsThreads: hasThreads,
-    memoryView: () => stuff.memory,
+    memoryView: () => [stuff.memory, pos_out, pos_length],
     fft_2d: wrapFunc(multiThread.fft_2d),
     render: wrapFunc((...args) => multiThread.gen_and_paint_height_field(retbuf, ...args)),
     setup: () => multiThread.gen_wavefield(retbuf),

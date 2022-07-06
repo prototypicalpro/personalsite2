@@ -28,7 +28,8 @@ const timeOutput = document.getElementById('time');
     })
   ).handlers;
 
-  console.log(await handlers.memoryView());
+  const [mem, ptr, len] = await handlers.memoryView();
+  console.log(mem, ptr, len);
 
   Object.assign(document.getElementById('cmplxSimd'), {
     async onclick() {
@@ -69,9 +70,13 @@ const timeOutput = document.getElementById('time');
         const render_res = await handlers.render({ time: t / 1000.0 });
         timeOutput.value = `Time: ${render_res.time.toFixed(2)} ms`;
 
+        const floatview = new Float32Array(mem.buffer, ptr, len / 4);
+        console.log(floatview);
+        console.log(floatview.slice(0, 4));
+
         const imgData = new ImageData(render_res.data, 512, 512);
         ctx.putImageData(imgData, 0, 0);
-        requestAnimationFrame(cb);
+        // requestAnimationFrame(cb);
       }
       requestAnimationFrame(cb);
     }
