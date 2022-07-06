@@ -5,34 +5,44 @@ const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 const dist = path.resolve(__dirname, "dist");
 
 module.exports = {
-  mode: "development",
-  entry: {
-    index: "./index.js"
-  },
-  output: {
-    path: dist,
-    filename: "index.js"
-  },
-  devServer: {
-    static: {
-      directory: dist,
+    mode: "development",
+    entry: {
+        index: "./ts_src/index.ts",
     },
-    headers: [
-		  { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
-		  { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" }
-		],
-  },
-  plugins: [
-    new CopyPlugin({
-      patterns: [
-        { from: path.resolve(__dirname, "index.html"), to: path.resolve(dist, "index.html") }
-      ]
-    }),
-
-    new WasmPackPlugin({
-      extraArgs: '--target web -- -Z build-std=panic_abort,std',
-      crateDirectory: __dirname,
-      forceMode: 'production' // using development causes a link error
-    }),
-  ]
+    output: {
+        path: dist,
+        filename: "[name].js",
+    },
+    resolve: {
+        extensions: [".webpack.js", ".web.js", ".ts", ".tsx", ".js"],
+    },
+    module: {
+        rules: [
+            {
+                test: /\.tsx?$/,
+                exclude: [/node_modules/, /tsOld/],
+                loader: "ts-loader",
+            },
+        ],
+    },
+    devtool: "inline-source-map",
+    devServer: {
+        static: {
+            directory: dist,
+        },
+        headers: [
+            { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+            { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+        ],
+    },
+    plugins: [
+        new CopyPlugin({
+            patterns: [{ from: path.resolve(__dirname, "public"), to: dist }],
+        }),
+        new WasmPackPlugin({
+            extraArgs: "--target web",
+            crateDirectory: __dirname,
+            forceMode: "production", // using development causes a link error
+        }),
+    ],
 };

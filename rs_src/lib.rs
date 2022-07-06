@@ -10,7 +10,6 @@ use wasm_bindgen::{prelude::*, Clamped, JsCast};
 extern crate console_error_panic_hook;
 use rayon::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
-use web_sys::ImageData;
 use core::arch::wasm32;
 use itertools::{Itertools, MinMaxResult};
 use std::{convert::*, f32::consts::{TAU, PI}, pin::Pin};
