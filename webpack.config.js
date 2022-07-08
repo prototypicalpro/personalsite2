@@ -42,6 +42,7 @@ module.exports = {
         new WasmPackPlugin({
             extraArgs: "--target web",
             crateDirectory: __dirname,
+            watchDirectories: [path.resolve(__dirname, "rs_src")],
             forceMode: "production", // using development causes a link error
         }),
     ],

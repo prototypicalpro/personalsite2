@@ -70,6 +70,14 @@ impl WaveGen {
         }
     }
 
+    pub fn domain(&self) -> f32 {
+        self.domain
+    }
+
+    pub fn points(&self) -> usize {
+        self.points
+    }
+ 
     fn jonswap_power(&self, omega: f32) -> f32 {
         // TODO: should gamma be random?
     

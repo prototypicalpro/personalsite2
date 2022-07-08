@@ -181,7 +181,7 @@ pub fn gen_wavefield(output: &mut RetBuf) {
 }
 
 #[wasm_bindgen]
-pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) -> Clamped<Vec<u8>> {
+pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     web_sys::console::time_with_label(&"height_field");
 
     let waves = &wavefield.data;
@@ -201,28 +201,31 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) -> Clamped<
         .iter()
         .zip_eq(&fft_out[1])
         .zip_eq(&fft_out[2])
-        .flat_map(|((h, x), y)| [h.0, x.0, y.0])
+        .enumerate()
+        .flat_map(|(i, ((h, x), y))| {
+            // scale xy to [-domain/2, domain/2]
+            // and set origin to top right (-x, +y)
+            let x_pos = (i % field.points()) as f32 * (field.domain() / field.points() as f32) - 0.5*field.domain();
+            let y_pos = 0.5*field.domain() - (i / field.points()) as f32 * (field.domain() / field.points() as f32);
+            [x_pos + x.0, y_pos + y.0, h.0]
+        })
         .collect_into(pos_out);
 
 
-    let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
-    let pix_out: Vec<u8> = fft_out[0]
-        .par_iter()
-        .zip_eq(&fft_out[1])
-        .zip_eq(&fft_out[2])
-        .flat_map_iter(|((h, x), y)| [normalize(h.0), normalize(x.0), normalize(y.0), 255_u8])
-        .collect();
+    // let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
+    // let pix_out: Vec<u8> = fft_out[0]
+    //     .par_iter()
+    //     .zip_eq(&fft_out[1])
+    //     .zip_eq(&fft_out[2])
+    //     .flat_map_iter(|((h, x), y)| [normalize(h.0), normalize(x.0), normalize(y.0), 255_u8])
+    //     .collect();
     
     // let minmax = fft_out[1].as_slice().into_iter().map(|c| c.0).minmax().into_option().unwrap();
     // web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
     
     web_sys::console::time_end_with_label(&"height_field");
 
-    Clamped(pix_out)
-    // cmplx_out
-    //     .into_iter()
-    //     .flat_map(|c| [c.0, c.1])
-    //     .collect_vec()
+    // Clamped(pix_out)
 }
 
 
