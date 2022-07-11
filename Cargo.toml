@@ -24,6 +24,7 @@ arrayvec = "0.7.2"
 strided = "0.2.9"
 web-sys = { version = "0.3.58", features = ['console'] }
 js-sys = "0.3.58"
+num-complex = "0.4.2"
 
 # TODO: reenable wasm-opt as a separate pass
 [package.metadata.wasm-pack.profile.release]

@@ -5,16 +5,16 @@ use rayon::{prelude::*, iter::repeat};
 use rand_distr::{Normal, Uniform};
 use rayon::iter::{ParallelBridge, IntoParallelIterator};
 use arrayvec::ArrayVec;
+use num_complex::Complex32;
 use crate::{gamma, collect_into_arrayvec::ParCollectArrayVec};
-use crate::cmplx::Complex;
 use crate::product_exact::ProductExactIteratorTrait;
 
 const GRAVITY: f32 = 9.807;
 
 #[derive(Debug, Clone)]
 pub struct WavePoint {
-    pos_spec: Complex,
-    neg_spec: Complex,
+    pos_spec: Complex32,
+    neg_spec: Complex32,
     omega: f32
 }
 
@@ -51,7 +51,8 @@ impl WaveGen {
     /// * `swell` - Wave swell from 0 - 1
     pub fn new(points: usize, domain: f32, depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32) -> WaveGen {
         let alpha = 0.076*(wind_speed.powi(2) / (GRAVITY*fetch)).abs().powf(0.22);
-        let omega_p = TAU*3.5*(GRAVITY.powi(2) / (wind_speed*fetch)).powf(0.33);
+        let dimless_fetch = GRAVITY*fetch / wind_speed.powi(2);
+        let omega_p = TAU*3.5*(GRAVITY / wind_speed)*dimless_fetch.powf(-0.33);
         let tma_gain = (depth / GRAVITY).sqrt();
         let hassleman_raise = -2.33 - 1.45*((wind_speed*omega_p) / GRAVITY - 1.17);
         let dk = TAU / domain;
@@ -127,44 +128,35 @@ impl WaveGen {
     fn compute_spectra_impl(&self, k_mag: f32, theta: (f32, f32), rng: &mut ThreadRng) -> WavePoint {
         if k_mag == 0.0 {
             return WavePoint {
-                pos_spec: Complex(0.0, 0.0),
-                neg_spec: Complex(0.0, 0.0),
+                pos_spec: Complex32::new(0.0, 0.0),
+                neg_spec: Complex32::new(0.0, 0.0),
                 omega: 0.0
             };
         }
 
         let (omega, domega_dk) = self.capilary_dispersion(k_mag);
+        assert!(omega >= 0.0 && omega.is_finite());
+        assert!(domega_dk >= 0.0 && domega_dk.is_finite());
+
         let change_term = self.dk.powi(2)*domega_dk / k_mag;
         
         let power_base = self.jonswap_power(omega)*self.tma_correct(omega)*change_term;
+        assert!(power_base.is_finite());
         let swell_shape = self.horvath_swell_shape(omega);
+        assert!(swell_shape.is_finite());
         let pos_power = power_base*self.hassleman_direction(omega, theta.0, swell_shape);
         let neg_power = power_base*self.hassleman_direction(omega, theta.1, swell_shape);
+        assert!(pos_power.is_finite() && neg_power.is_finite());
     
-        let dist = Normal::new(0.0_f32, 1.0_f32).unwrap();
-        let pos_amp = (2.0*pos_power).abs().sqrt()*dist.sample(rng);
-        let neg_amp = (2.0*neg_power).abs().sqrt()*dist.sample(rng);
+        let norm = Normal::new(0.0_f32, 1.0_f32).unwrap();
+        let pos_amp = (2.0*pos_power).abs().sqrt()*norm.sample(rng);
+        let neg_amp = (2.0*neg_power).abs().sqrt()*norm.sample(rng);
 
         let distr = Uniform::new(0.0_f32, TAU);
-        let pos_cmplx = Complex::from_polar(pos_amp, distr.sample(rng));
-        let neg_cmplx = Complex::from_polar(neg_amp, distr.sample(rng));
+        let pos_cmplx = Complex32::from_polar(pos_amp, distr.sample(rng));
+        let neg_cmplx = Complex32::from_polar(neg_amp, distr.sample(rng));
 
         WavePoint { pos_spec: pos_cmplx, neg_spec: neg_cmplx, omega: omega }
-    }
-
-    fn spectral_iterator(&self) -> impl ExactSizeIterator<Item = ((f32, f32), f32)> + '_ {
-        let width = self.points / 2 + 1;
-
-        (0..self.points)
-            .product_exact(0..width)
-            .map(move |(y, x)| {
-                let y_rev = if y <= self.points / 2 { y as isize } else { y as isize - self.points as isize };
-                ((
-                    (x as f32)*self.dk,
-                    (y_rev as f32)*self.dk
-                ),
-                self.dk*(x as f32).hypot(y_rev as f32))
-            })
     }
 
     fn par_spectral_iterator(&self) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32)> + '_ {
@@ -173,8 +165,9 @@ impl WaveGen {
         (0..self.points*width)
             .into_par_iter()
             .map(move |i| {
-                let x = i % width;
-                let y = i / width;
+                // NOTE: outputs are transposed
+                let x = i / self.points;
+                let y = i % self.points;
                 let y_rev = if y <= self.points / 2 { y as isize } else { y as isize - self.points as isize };
                 // let y_rev = (y as isize) - (self.points / 2) as isize;
                 // let x_rev = (x as isize) - (self.points / 2) as isize;
@@ -197,23 +190,23 @@ impl WaveGen {
         vec.into_boxed_slice()
     }
 
-    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex>, 3> {
+    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex32>, 3> {
         let width = self.points / 2 + 1;
         assert!(slice.len() == width * self.points);
 
-        let timevaried: Vec<Complex> = slice
+        let timevaried: Vec<Complex32> = slice
             .into_iter()
             // apply time variation
             .map(|w| {
                 let omega_t = w.omega * time;
-                let bkwd = Complex::from_polar(1.0, omega_t);
+                let bkwd = Complex32::from_polar(1.0, omega_t);
                 let fwd = bkwd.conj();
                 
                 w.pos_spec*fwd + w.neg_spec*bkwd
             })
             .collect();
         
-        let mut ret: ArrayVec<Vec<Complex>, 3> = ArrayVec::new_const();
+        let mut ret: ArrayVec<Vec<Complex32>, 3> = ArrayVec::new();
         [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY]
             .into_par_iter()
             .map(|p| {
@@ -223,29 +216,14 @@ impl WaveGen {
                     .zip_eq(self.par_spectral_iterator())
                     .map(move |(h, ((kx, ky), k_mag))| {
                         if k_mag == 0.0 {
-                            return (*h).clone()
+                            return h.clone()
                         }
                         return match p {
-                            OceanProp::HEIGHT => (*h).clone(),
-                            OceanProp::DX => *h*Complex(0.0, -kx/k_mag),
-                            OceanProp::DY => *h*Complex(0.0, -ky/k_mag),
+                            OceanProp::HEIGHT => h.clone(),
+                            OceanProp::DX => *h*Complex32::new(0.0, -kx/k_mag),
+                            OceanProp::DY => *h*Complex32::new(0.0, -ky/k_mag),
                         }})
-            })
-            .map(|r| {
-                r
-                    .chunks(width)
-                    .flat_map_iter(|w_chunk| {
-                        let w_varied_conj = w_chunk[1..w_chunk.len() - 1]
-                            .iter()
-                            .map(|c| c.conj())
-                            .rev();
-                        w_chunk
-                            .iter()
-                            .map(|c| c.to_owned())
-                            .chain(w_varied_conj)
-                            .collect::<ArrayVec<_, 512>>() // TODO: make this not a magic number
-                    })
-                    .collect::<Vec<Complex>>()
+                    .collect::<Vec<Complex32>>()
             })
             .collect_into_arrayvec(&mut ret);
         ret

@@ -33,9 +33,9 @@ export default class View {
             DOMAIN / 2,
             -DOMAIN / 2,
             0,
-            3
+            10
         );
-        this.camera.position.z = 3;
+        this.camera.position.z = 10;
         this.scene = new THREE.Scene();
 
         this.waveGeoPos = new THREE.BufferAttribute(undefined, 3);
