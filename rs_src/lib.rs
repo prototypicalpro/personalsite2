@@ -10,7 +10,7 @@ extern crate console_error_panic_hook;
 use rayon::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 use core::arch::wasm32;
-use itertools::{Itertools, MinMaxResult};
+use itertools::{Itertools, MinMaxResult, izip};
 use std::{convert::*, f32::consts::{TAU, PI}, pin::Pin, mem::align_of, mem::size_of};
 use strided::{Stride, MutStride, Strided, MutStrided, MutSubstrides};
 use arrayvec::ArrayVec;
@@ -223,7 +223,9 @@ pub struct RetBuf {
     #[wasm_bindgen(skip)]
     pub field: Box<WaveGen>,
     #[wasm_bindgen(skip)]
-    pub pos_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>
+    pub pos_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>,
+    #[wasm_bindgen(skip)]
+    pub norm_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>
 }
 
 #[wasm_bindgen]
@@ -233,16 +235,22 @@ impl RetBuf {
         // allocating a new box of arrayvec still pushes it to the stack for some reason
         // so we fiddle with it manually here
         let pos_out = make_box_arrayvec::<f32, OUT_FIELD_SIZE>();
+        let norm_out = make_box_arrayvec::<f32, OUT_FIELD_SIZE>();
 
         RetBuf{ 
             data: Box::new([]), 
             field: Box::new(WaveGen::default()),
-            pos_out: pos_out.into()
+            pos_out: pos_out.into(),
+            norm_out: norm_out.into()
         }
     }
 
     pub fn get_pos_out_ptr(&self) -> *const f32 {
         self.pos_out.as_ptr()
+    }
+
+    pub fn get_norm_out_ptr(&self) -> *const f32 {
+        self.norm_out.as_ptr()
     }
 }
 
@@ -250,7 +258,7 @@ impl RetBuf {
 pub fn gen_wavefield(output: &mut RetBuf) {
     console_error_panic_hook::set_once();
 
-    output.field = Box::new(WaveGen::new(N, 250.0, 1000.0, 25.0, 100000.0, 3.33, 0.0));
+    output.field = Box::new(WaveGen::new(N, 250.0, 10.0, 5.0, 1000.0, 3.33, 0.0));
     output.data = output.field.compute_spectra();
 }
 
@@ -261,7 +269,9 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     let waves = &wavefield.data;
     let field = &wavefield.field;
     let pos_out = &mut *wavefield.pos_out;
+    let norm_out = &mut *wavefield.norm_out;
     pos_out.truncate(0);
+    norm_out.truncate(0);
 
     let mut cmplx_field = field.compute_timevaried(&waves, time);
     
@@ -270,7 +280,7 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     //     .flat_map(|c| [c.re, c.im])
     //     .collect::<Vec<f32>>();
 
-    let mut fft_out: ArrayVec<Box<[f32]>, 3> = ArrayVec::new_const();
+    let mut fft_out: ArrayVec<Box<[f32]>, 7> = ArrayVec::new();
     cmplx_field
         .par_iter_mut()
         .map(|c| fft_2d_impl(c.as_mut_slice()))
@@ -286,9 +296,18 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
             // and set origin to top right (-x, +y)
             let x_pos = (i % field.points()) as f32 * (field.domain() / field.points() as f32) - 0.5*field.domain();
             let y_pos = 0.5*field.domain() - (i / field.points()) as f32 * (field.domain() / field.points() as f32);
-            [x_pos + x, y_pos + y, h.clone() + 2.0]
+            [x_pos + x, y_pos + y, h.clone()]
         })
         .collect_into(pos_out);
+
+    izip!(fft_out[3].iter(), fft_out[4].iter(), fft_out[5].iter(), fft_out[6].iter())
+        .flat_map(|(dxx, dyy, dzx, dzy)| {
+            let slopex = *dzx / (1.0 + *dxx);
+            let slopey = *dzy / (1.0 + *dyy);
+            let mag = (slopex.powi(2) + slopey.powi(2) + 1.0).sqrt();
+            [-slopex / mag, -slopey / mag, mag.recip()]
+        })
+        .collect_into(norm_out);
 
     // let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
     // let pix_out: Vec<u8> = fft_out[0]

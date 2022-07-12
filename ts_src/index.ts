@@ -8,7 +8,7 @@ const timeOutput = document.getElementById("time") as HTMLOutputElement;
 
 interface WorkerHandlers {
     handlers: {
-        memoryView: () => Promise<[WebAssembly.Memory, number, number]>;
+        memoryView: () => Promise<[WebAssembly.Memory, number, number, number]>;
         setup: () => Promise<void>;
         render: (arg: {
             time: number;
@@ -24,8 +24,8 @@ async function init() {
         })
     ).handlers;
 
-    const [mem, ptr, len] = await handlers.memoryView();
-    console.log(mem, ptr, len);
+    const [mem, pos_ptr, norm_ptr, len] = await handlers.memoryView();
+    console.log(mem, pos_ptr, norm_ptr, len);
 
     const view = new View(canvas);
 
@@ -36,12 +36,18 @@ async function init() {
         // console.log(render_res.data);
         timeOutput.value = `Time: ${render_res.time.toFixed(2)} ms`;
 
-        const floatview = new Float32Array(
+        const posview = new Float32Array(
             mem.buffer,
-            ptr,
+            pos_ptr,
             len / Float32Array.BYTES_PER_ELEMENT
         );
-        view.update(t / 1000.0, floatview);
+        const normview = new Float32Array(
+            mem.buffer,
+            norm_ptr,
+            len / Float32Array.BYTES_PER_ELEMENT
+        );
+
+        view.update(t / 1000.0, posview, normview);
 
         // const canvasData = new ImageData(render_res.data, 512, 512);
         // ctx.putImageData(canvasData, 0, 0);

@@ -2,7 +2,7 @@ use std::{f32::consts::{PI, TAU}};
 use itertools::{Itertools, Product};
 use rand::prelude::*;
 use rayon::{prelude::*, iter::repeat};
-use rand_distr::{Normal, Uniform};
+use rand_distr::{Normal, Uniform, num_traits::Zero};
 use rayon::iter::{ParallelBridge, IntoParallelIterator};
 use arrayvec::ArrayVec;
 use num_complex::Complex32;
@@ -35,7 +35,11 @@ pub struct WaveGen {
 enum OceanProp {
     HEIGHT,
     DX,
-    DY
+    DY,
+    DXX,
+    DYY,
+    DZX,
+    DZY
 }
 
 impl WaveGen {
@@ -190,7 +194,7 @@ impl WaveGen {
         vec.into_boxed_slice()
     }
 
-    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex32>, 3> {
+    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex32>, 7> {
         let width = self.points / 2 + 1;
         assert!(slice.len() == width * self.points);
 
@@ -206,23 +210,26 @@ impl WaveGen {
             })
             .collect();
         
-        let mut ret: ArrayVec<Vec<Complex32>, 3> = ArrayVec::new();
-        [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY]
+        let mut ret: ArrayVec<Vec<Complex32>, 7> = ArrayVec::new();
+        [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
             .into_par_iter()
             .map(|p| {
+                let mapfunc: fn((&Complex32, ((f32, f32), f32))) -> Complex32 = match p {
+                    OceanProp::HEIGHT => |(h, _)| h.clone(),
+                    OceanProp::DX =>    |(h, ((kx, _), k_mag))| *h*Complex32::new(0.0, -kx/k_mag),
+                    OceanProp::DY =>    |(h, ((_, ky), k_mag))| *h*Complex32::new(0.0, -ky/k_mag),
+                    OceanProp::DXX =>   |(h, ((kx, _), k_mag))| -*h*Complex32::new(kx.powi(2)/k_mag, 0.0),
+                    OceanProp::DYY =>   |(h, ((_, ky), k_mag))| -*h*Complex32::new(ky.powi(2)/k_mag, 0.0),
+                    OceanProp::DZX =>   |(h, ((kx, _), _))| *h*Complex32::new(0.0, -kx),
+                    OceanProp::DZY =>   |(h, ((_, ky), _))| *h*Complex32::new(0.0, -ky),
+                };
+
                 return timevaried
                     .as_slice()
                     .into_par_iter()
                     .zip_eq(self.par_spectral_iterator())
-                    .map(move |(h, ((kx, ky), k_mag))| {
-                        if k_mag == 0.0 {
-                            return h.clone()
-                        }
-                        return match p {
-                            OceanProp::HEIGHT => h.clone(),
-                            OceanProp::DX => *h*Complex32::new(0.0, -kx/k_mag),
-                            OceanProp::DY => *h*Complex32::new(0.0, -ky/k_mag),
-                        }})
+                    .map(|(h, ((kx, ky), k_mag))| 
+                        if k_mag != 0.0 { mapfunc((h, ((kx, ky), k_mag))) } else { Complex32::zero() })
                     .collect::<Vec<Complex32>>()
             })
             .collect_into_arrayvec(&mut ret);
