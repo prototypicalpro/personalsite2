@@ -14,7 +14,7 @@ module.exports = {
         filename: "[name].js",
     },
     resolve: {
-        extensions: [".webpack.js", ".web.js", ".ts", ".tsx", ".js"],
+        extensions: [".webpack.js", ".web.js", ".ts", ".tsx", ".js", ".glsl"],
     },
     module: {
         rules: [
@@ -22,6 +22,14 @@ module.exports = {
                 test: /\.tsx?$/,
                 exclude: [/node_modules/, /tsOld/],
                 loader: "ts-loader",
+            },
+            {
+                test: /\.(glsl|vs|fs)$/,
+                loader: "ts-shader-loader",
+            },
+            {
+                test: /\.(png|svg|jpg|jpeg|gif)$/i,
+                type: "asset/resource",
             },
         ],
     },

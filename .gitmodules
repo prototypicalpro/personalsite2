@@ -4,3 +4,6 @@
 [submodule "lib/strided-rs"]
 	path = lib/strided-rs
 	url = git@github.com:prototypicalpro/strided-rs.git
+[submodule "lib/three.js"]
+	path = lib/three.js
+	url = git@github.com:prototypicalpro/three.js.git

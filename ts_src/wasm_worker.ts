@@ -34,8 +34,8 @@ async function initHandlers() {
     // const fixFFTInput = (real, complex) => { multiThread.fft_2d(new multiThread.Ret2D(real, complex)) };
     const retbuf = new multiThread.RetBuf();
     const pos_out = retbuf.get_pos_out_ptr();
-    const norm_out = retbuf.get_norm_out_ptr();
-    const pos_length = 512 * 512 * 3 * 4; // 512x512 grid of (f32, f32, f32)
+    const norm_out = retbuf.get_partial_out_ptr();
+    const pos_length = 512 * 512 * 4 * 4; // 512x512 grid of (f32, f32, f32, f32)
 
     return Comlink.proxy({
         supportsThreads: hasThreads,
@@ -43,7 +43,30 @@ async function initHandlers() {
         render: wrapFunc((time: number) =>
             multiThread.gen_and_paint_height_field(retbuf, time)
         ),
-        setup: () => multiThread.gen_wavefield(retbuf),
+        setup: ({
+            domain,
+            depth,
+            wind_speed,
+            fetch,
+            damping,
+            swell,
+        }: {
+            domain: number;
+            depth: number;
+            wind_speed: number;
+            fetch: number;
+            damping: number;
+            swell: number;
+        }) =>
+            multiThread.gen_wavefield(
+                domain,
+                depth,
+                wind_speed,
+                fetch,
+                damping,
+                swell,
+                retbuf
+            ),
     });
 }
 

@@ -25,7 +25,7 @@ mod product_exact;
 mod collect_into_arrayvec;
 
 use const_twid::lookup_twiddle;
-use wavegen::{WaveGen, WavePoint};
+use wavegen::{WaveGen, WavePoint, OceanProp};
 use collect_into_arrayvec::ParCollectArrayVec;
 use product_exact::ProductExactIteratorTrait;
 
@@ -214,7 +214,7 @@ fn fft_2d_impl(input_unpacked: &mut [Complex32]) -> Box<[f32]> {
     output
 }
 
-const OUT_FIELD_SIZE: usize = 512*512*3; // TODO: constants
+const OUT_FIELD_SIZE: usize = 512*512*4; // TODO: constants
 
 #[wasm_bindgen]
 pub struct RetBuf {
@@ -225,7 +225,7 @@ pub struct RetBuf {
     #[wasm_bindgen(skip)]
     pub pos_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>,
     #[wasm_bindgen(skip)]
-    pub norm_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>
+    pub partial_out: Pin<Box<ArrayVec<f32, OUT_FIELD_SIZE>>>
 }
 
 #[wasm_bindgen]
@@ -235,13 +235,13 @@ impl RetBuf {
         // allocating a new box of arrayvec still pushes it to the stack for some reason
         // so we fiddle with it manually here
         let pos_out = make_box_arrayvec::<f32, OUT_FIELD_SIZE>();
-        let norm_out = make_box_arrayvec::<f32, OUT_FIELD_SIZE>();
+        let partial_out = make_box_arrayvec::<f32, OUT_FIELD_SIZE>();
 
         RetBuf{ 
             data: Box::new([]), 
             field: Box::new(WaveGen::default()),
             pos_out: pos_out.into(),
-            norm_out: norm_out.into()
+            partial_out: partial_out.into()
         }
     }
 
@@ -249,16 +249,16 @@ impl RetBuf {
         self.pos_out.as_ptr()
     }
 
-    pub fn get_norm_out_ptr(&self) -> *const f32 {
-        self.norm_out.as_ptr()
+    pub fn get_partial_out_ptr(&self) -> *const f32 {
+        self.partial_out.as_ptr()
     }
 }
 
 #[wasm_bindgen]
-pub fn gen_wavefield(output: &mut RetBuf) {
+pub fn gen_wavefield(domain: f32, depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, output: &mut RetBuf) {
     console_error_panic_hook::set_once();
 
-    output.field = Box::new(WaveGen::new(N, 250.0, 10.0, 5.0, 1000.0, 3.33, 0.0));
+    output.field = Box::new(WaveGen::new(N, domain, depth, wind_speed, fetch, damping, swell));
     output.data = output.field.compute_spectra();
 }
 
@@ -269,9 +269,9 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     let waves = &wavefield.data;
     let field = &wavefield.field;
     let pos_out = &mut *wavefield.pos_out;
-    let norm_out = &mut *wavefield.norm_out;
+    let partial_out = &mut *wavefield.partial_out;
     pos_out.truncate(0);
-    norm_out.truncate(0);
+    partial_out.truncate(0);
 
     let mut cmplx_field = field.compute_timevaried(&waves, time);
     
@@ -280,34 +280,34 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     //     .flat_map(|c| [c.re, c.im])
     //     .collect::<Vec<f32>>();
 
-    let mut fft_out: ArrayVec<Box<[f32]>, 7> = ArrayVec::new();
+    let mut fft_out: ArrayVec<Box<[f32]>, 8> = ArrayVec::new();
     cmplx_field
         .par_iter_mut()
         .map(|c| fft_2d_impl(c.as_mut_slice()))
         .collect_into_arrayvec(&mut fft_out);
 
-    fft_out[0]
-        .iter()
-        .zip_eq(&*fft_out[1])
-        .zip_eq(&*fft_out[2])
+    izip!(
+        fft_out[OceanProp::HEIGHT as usize].iter(), 
+        fft_out[OceanProp::DX as usize].iter(), 
+        fft_out[OceanProp::DY as usize].iter(), 
+        fft_out[OceanProp::DXY as usize].iter())
         .enumerate()
-        .flat_map(|(i, ((h, x), y))| {
+        .flat_map(|(i, (h, x, y, xy))| {
             // scale xy to [-domain/2, domain/2]
-            // and set origin to top right (-x, +y)
+            // and set origin to top left (-x, +y)
             let x_pos = (i % field.points()) as f32 * (field.domain() / field.points() as f32) - 0.5*field.domain();
             let y_pos = 0.5*field.domain() - (i / field.points()) as f32 * (field.domain() / field.points() as f32);
-            [x_pos + x, y_pos + y, h.clone()]
+            [x_pos + x, y_pos + y, h.clone(), xy.clone()]
         })
         .collect_into(pos_out);
 
-    izip!(fft_out[3].iter(), fft_out[4].iter(), fft_out[5].iter(), fft_out[6].iter())
-        .flat_map(|(dxx, dyy, dzx, dzy)| {
-            let slopex = *dzx / (1.0 + *dxx);
-            let slopey = *dzy / (1.0 + *dyy);
-            let mag = (slopex.powi(2) + slopey.powi(2) + 1.0).sqrt();
-            [-slopex / mag, -slopey / mag, mag.recip()]
-        })
-        .collect_into(norm_out);
+    izip!(
+        fft_out[OceanProp::DXX as usize].iter(), 
+        fft_out[OceanProp::DYY as usize].iter(),
+        fft_out[OceanProp::DZX as usize].iter(), 
+        fft_out[OceanProp::DZY as usize].iter())
+        .flat_map(|(dxx, dyy, dzx, dzy)| [dxx.clone(), dyy.clone(), dzx.clone(), dzy.clone()])
+        .collect_into(partial_out);
 
     // let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
     // let pix_out: Vec<u8> = fft_out[0]

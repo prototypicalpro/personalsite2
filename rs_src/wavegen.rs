@@ -32,14 +32,15 @@ pub struct WaveGen {
     horvath_swell: f32,
 }
 
-enum OceanProp {
-    HEIGHT,
-    DX,
-    DY,
-    DXX,
-    DYY,
-    DZX,
-    DZY
+pub enum OceanProp {
+    HEIGHT = 0,
+    DX = 1,
+    DY = 2,
+    DXY = 3,
+    DXX = 4,
+    DYY = 5,
+    DZX = 6,
+    DZY = 7
 }
 
 impl WaveGen {
@@ -194,7 +195,7 @@ impl WaveGen {
         vec.into_boxed_slice()
     }
 
-    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex32>, 7> {
+    pub fn compute_timevaried(&self, slice: &[WavePoint], time: f32) -> ArrayVec<Vec<Complex32>, 8> {
         let width = self.points / 2 + 1;
         assert!(slice.len() == width * self.points);
 
@@ -210,18 +211,19 @@ impl WaveGen {
             })
             .collect();
         
-        let mut ret: ArrayVec<Vec<Complex32>, 7> = ArrayVec::new();
-        [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
+        let mut ret: ArrayVec<Vec<Complex32>, 8> = ArrayVec::new();
+        [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
             .into_par_iter()
             .map(|p| {
                 let mapfunc: fn((&Complex32, ((f32, f32), f32))) -> Complex32 = match p {
                     OceanProp::HEIGHT => |(h, _)| h.clone(),
                     OceanProp::DX =>    |(h, ((kx, _), k_mag))| *h*Complex32::new(0.0, -kx/k_mag),
                     OceanProp::DY =>    |(h, ((_, ky), k_mag))| *h*Complex32::new(0.0, -ky/k_mag),
+                    OceanProp::DXY =>   |(h, ((kx, ky), k_mag))| -*h*Complex32::new(kx*ky/k_mag, 0.0),
                     OceanProp::DXX =>   |(h, ((kx, _), k_mag))| -*h*Complex32::new(kx.powi(2)/k_mag, 0.0),
                     OceanProp::DYY =>   |(h, ((_, ky), k_mag))| -*h*Complex32::new(ky.powi(2)/k_mag, 0.0),
-                    OceanProp::DZX =>   |(h, ((kx, _), _))| *h*Complex32::new(0.0, -kx),
-                    OceanProp::DZY =>   |(h, ((_, ky), _))| *h*Complex32::new(0.0, -ky),
+                    OceanProp::DZX =>   |(h, ((kx, _), _))| *h*Complex32::new(0.0, kx),
+                    OceanProp::DZY =>   |(h, ((_, ky), _))| *h*Complex32::new(0.0, ky),
                 };
 
                 return timevaried
