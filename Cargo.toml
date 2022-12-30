@@ -30,6 +30,11 @@ num-complex = "0.4.2"
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
 
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+debug-js-glue = true
+demangle-name-section = true
+dwarf-debug-info = true
+
 [profile.release]
 lto = true
 # debug = true
