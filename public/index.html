@@ -1,14 +1,37 @@
 <!DOCTYPE html>
 <title>Demo for Rust + WebAssembly threads</title>
 <body>
-<p>This is a demo for <a href="https://github.com/GoogleChromeLabs/wasm-bindgen-rayon">wasm-bindgen-rayon</a>, generating a <a href="https://en.wikipedia.org/wiki/Mandelbrot_set">Mandelbrot fractal</a> with WebAssembly threads.</p>
-<input type="button" id="singleThread" value="Draw using a single thread" disabled />
-<input type="button" id="multiThread" value="Draw using all available threads" disabled />
-<input type="button" id="cmplxSimd" value="Test complex multiplication with SIMD" />
-<input type="button" id="fft" value="Test FFT" />
-<input type="button" id="render" value="Test Render" />
-<output id="time"></output>
-<br />
-<canvas id="canvas" width="512" height="512"></canvas>
-<script src="index.js"></script>
+    <p>
+        This is a demo for
+        <a href="https://github.com/GoogleChromeLabs/wasm-bindgen-rayon"
+            >wasm-bindgen-rayon</a
+        >, generating a
+        <a href="https://en.wikipedia.org/wiki/Mandelbrot_set"
+            >Mandelbrot fractal</a
+        >
+        with WebAssembly threads.
+    </p>
+    <input
+        type="button"
+        id="singleThread"
+        value="Draw using a single thread"
+        disabled
+    />
+    <input
+        type="button"
+        id="multiThread"
+        value="Draw using all available threads"
+        disabled
+    />
+    <input
+        type="button"
+        id="cmplxSimd"
+        value="Test complex multiplication with SIMD"
+    />
+    <input type="button" id="fft" value="Test FFT" />
+    <input type="button" id="render" value="Test Render" />
+    <output id="time"></output>
+    <br />
+    <canvas id="canvas" width="1080" height="1080"></canvas>
+    <script src="index.js"></script>
 </body>

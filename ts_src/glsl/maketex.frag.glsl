@@ -7,19 +7,16 @@ precision highp int;
 precision highp sampler2D;
 
 flat in vec4 fragPosition;
-flat in vec4 fragPartial;
+flat in vec4 fragPartial; // (dxx, dyy, dzx, dzy)
 
-layout(location = 0) out vec4 position;
-layout(location = 1) out vec4 partial;
-layout(location = 2) out vec4 normal;
+layout(location = 0) out vec4 position; // (x, y, z, dxy)
+layout(location = 1) out vec4 firstMoments; // (slopex, slopey)
+layout(location = 2) out vec4 secondMoments; // (slopex*slopex, slopey*slopey, slopex*slopey)
 
-vec3 normalFromPartials(vec4 partials) {
-    vec2 slope = partials.zw / (1. + partials.xy);
-    return normalize(vec3(-slope, 1.));
-}
 
 void main() {
+    // TODO: fix moments to use slopes instead of partials
     position = fragPosition;
-    partial = fragPartial;
-    normal = vec4(normalFromPartials(partial), 0.0);
+    firstMoments = vec4(fragPartial.zw / (1. + fragPartial.xy), 0, 0);
+    secondMoments = vec4(firstMoments.xyx * firstMoments.xyy, 0);
 }

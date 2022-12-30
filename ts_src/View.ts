@@ -13,7 +13,8 @@ import raytraceVert from "./glsl/raytrace.vert.glsl";
 import raytraceFrag from "./glsl/raytrace.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
-import Tex from "./img/tex.jpg";
+// import Tex from "./img/tex.jpg";
+import Tex from "./img/shapes.jpg";
 
 const POINTS = 512;
 
@@ -21,10 +22,10 @@ export default class View {
     static readonly waveProps = {
         domain: 10,
         depth: 5,
-        wind_speed: 50,
-        fetch: 5000000,
+        wind_speed: 5,
+        fetch: 5000,
         damping: 3.33,
-        swell: 0.5,
+        swell: 0,
     };
 
     worker: WorkerHandlers;
@@ -48,6 +49,7 @@ export default class View {
 
     constructor(
         canvasElem: HTMLCanvasElement,
+        tex: THREE.Texture,
         worker: WorkerHandlers,
         memory: [WebAssembly.Memory, number, number, number]
     ) {
@@ -67,9 +69,11 @@ export default class View {
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
-        this.backTex = new THREE.TextureLoader().load(Tex);
+        this.backTex = tex;
         this.backTex.wrapS = THREE.RepeatWrapping;
         this.backTex.wrapT = THREE.RepeatWrapping;
+        this.backTex.magFilter = THREE.LinearFilter;
+        this.backTex.minFilter = THREE.LinearMipMapLinearFilter;
 
         this.waveGeoPos = new THREE.BufferAttribute(undefined, 4);
         this.waveGeoPos.setUsage(THREE.StreamDrawUsage);
@@ -120,8 +124,9 @@ export default class View {
     ) {
         const mem = await worker.memoryView();
         await worker.setup(View.waveProps);
+        const tex = await new THREE.TextureLoader().loadAsync(Tex);
 
-        return new View(canvasElem, worker, mem);
+        return new View(canvasElem, tex, worker, mem);
     }
 
     private makeRaytraceUniforms() {
@@ -145,8 +150,8 @@ export default class View {
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
             0.5,
             0.5,
-            -1 / View.waveProps.domain,
-            -1 / View.waveProps.domain,
+            1 / View.waveProps.domain,
+            1 / View.waveProps.domain,
             0,
             0,
             0
@@ -159,8 +164,8 @@ export default class View {
 
         const waveUniforms = {
             wavePosition: new THREE.Uniform(this.makeTex.getPositionTex()),
-            wavePartial: new THREE.Uniform(this.makeTex.getPartialTex()),
-            waveNormal: new THREE.Uniform(this.makeTex.getNormalTex()),
+            waveMoments: new THREE.Uniform(this.makeTex.getFirstMomentsTex()),
+            waveSecMoments: new THREE.Uniform(this.makeTex.getSecMomentsTex()),
             wavePositionPoint: new THREE.Uniform(wavePosition.position),
             waveModelMatrix: new THREE.Uniform(wavePosition.matrixWorld),
             waveModelMatrixInverse: new THREE.Uniform(
@@ -175,10 +180,12 @@ export default class View {
             ...waveUniforms,
 
             floorPosition: new THREE.Uniform(
-                new THREE.Vector3(0, 0, View.waveProps.depth)
+                new THREE.Vector3(0, 0, -View.waveProps.depth)
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
             floorTexture: new THREE.Uniform(this.backTex),
+            floorSize: new THREE.Uniform(View.waveProps.domain),
+            floorPixels: new THREE.Uniform(this.backTex.image.width),
 
             lightNormal: new THREE.Uniform(light.position),
             lightPosition: new THREE.Uniform(lightNormal),
@@ -222,16 +229,16 @@ export default class View {
         this.renderer.setRenderTarget(null);
         this.renderer.render(this.waveMesh, this.camera);
 
-        this.renderer.setRenderTarget(this.debugRenderTarget);
-        this.renderer.render(this.waveMesh, this.camera);
-        this.renderer.readRenderTargetPixels(
-            this.debugRenderTarget,
-            0,
-            0,
-            512,
-            512,
-            out
-        );
-        console.log(out);
+        // this.renderer.setRenderTarget(this.debugRenderTarget);
+        // this.renderer.render(this.waveMesh, this.camera);
+        // this.renderer.readRenderTargetPixels(
+        //     this.debugRenderTarget,
+        //     0,
+        //     0,
+        //     512,
+        //     512,
+        //     out
+        // );
+        // console.log(out);
     }
 }

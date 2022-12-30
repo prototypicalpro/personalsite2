@@ -53,15 +53,16 @@ export default class MakeTex {
         this.makeTexMesh = new THREE.Points(geo, this.makeTexMat);
 
         this.renderTargets = new THREE.WebGLMultipleRenderTargets(pts, pts, 3, {
-            magFilter: THREE.NearestFilter,
-            minFilter: THREE.NearestFilter,
+            magFilter: THREE.LinearFilter,
+            minFilter: THREE.LinearMipmapLinearFilter,
             depthBuffer: false,
             type: THREE.FloatType,
             format: THREE.RGBAFormat,
+            generateMipmaps: true,
         });
         this.renderTargets.texture[0].name = "position";
-        this.renderTargets.texture[1].name = "partial";
-        this.renderTargets.texture[2].name = "normal";
+        this.renderTargets.texture[1].name = "firstMoments";
+        this.renderTargets.texture[2].name = "secondMoments";
     }
 
     render(renderer: THREE.WebGLRenderer) {
@@ -76,11 +77,11 @@ export default class MakeTex {
         return this.renderTargets.texture[0];
     }
 
-    getPartialTex() {
+    getFirstMomentsTex() {
         return this.renderTargets.texture[1];
     }
 
-    getNormalTex() {
+    getSecMomentsTex() {
         return this.renderTargets.texture[2];
     }
 }
