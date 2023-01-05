@@ -18,7 +18,7 @@ wasm-bindgen-rayon = { path = "./lib/wasm-bindgen-rayon" }
 wee_alloc = "0.4.5"
 itertools = "0.10.3"
 getrandom = { version = "0.2", features = ["js"] }
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["small_rng"] }
 rand_distr = "0.4.3"
 arrayvec = "0.7.2"
 strided = "0.2.9"

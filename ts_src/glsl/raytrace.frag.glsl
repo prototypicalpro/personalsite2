@@ -2,6 +2,8 @@
 
 /// end-pre-strip ///
 
+#define FILTER_COUNT 3
+
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -20,37 +22,17 @@ uniform float floorSize; // world space
 uniform float floorPixels;
 uniform sampler2D floorTexture;
 
-// light position relative to world space
-uniform vec3 lightNormal;
-uniform vec3 lightPosition;
-
 // XYZ of the wave surface, row major
-uniform sampler2D wavePosition; // (x, y, z, dxy)
-uniform sampler2D waveMoments; // (slopex, slopey)
-uniform sampler2D waveSecMoments; // (slopex*slopex, slopey*slopey, slopex*slopey)
+uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
+uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
+uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
 
-// position and scale of the wave surface (world space)
-uniform vec3 wavePositionPoint;
-const vec3 wavePositionNormal = vec3(0., 0., 1.); // always upwards relative to world
-// matricies to translate world space <-> wave object space
-uniform mat4 waveModelMatrix;
-uniform mat4 waveModelMatrixInverse;
-uniform mat3 waveTextureMatrix; // object space -> texture space
-uniform mat3 waveNormalMatrix;
-uniform mat3 waveNormalMatrixInverse;
-
-uniform float timeSec;
-
+in vec2 v_wave_tex_uv[FILTER_COUNT];
+in float v_wave_blending[FILTER_COUNT];
 in vec3 v_position; // world space
-in vec2 v_wave_texcoords;
-in vec3 v_wave_normal;
 in vec3 v_camera_normal;
 
 out vec4 color;
-
-// vec3 computeColorProj(vec3 textureCoordProj, float lod) {
-//     vec2 textureCoord = textureCoordProj.xy / textureCoord.z;
-// }
 
 float linePlaneDistance(vec3 linePoint, vec3 lineSlope, vec3 planePoint, vec3 planeNormal) {
     return dot(planePoint - linePoint, planeNormal) / dot(lineSlope, planeNormal);
@@ -61,17 +43,6 @@ vec3 linePlaneIntersection(vec3 linePoint, vec3 lineSlope, vec3 planePoint, vec3
     return linePoint + lineSlope*d;
 }
 
-
-vec3 proj(vec4 a) {
-    return a.xyz / a.w;
-}
-
-vec3 normalFromPartials(vec4 partials) {
-    vec2 slope = partials.zw / (1. + partials.xy);
-    vec3 normal = normalize(vec3(-slope, 1.));
-    return faceforward(normal, -wavePositionNormal, normal); // TODO: is this nessecary?
-}
-
 // https://gpuopen.com/gdc-presentations/2019/gdc-2019-agtd6-interactive-water-simulation-in-atlas.pdf
 
 float fresnel(vec3 wi, vec3 wn, vec3 secMoments) {
@@ -80,6 +51,94 @@ float fresnel(vec3 wi, vec3 wn, vec3 secMoments) {
     return R + (1. - R)*pow(1. - dot(wi, wn), 5.*exp(-2.69*alpha_v)) / (1. + 22.7*pow(alpha_v, 1.5));
 }
 
+vec2 combineFirstMoments(vec2 moments[FILTER_COUNT]) {
+    return moments[0] + moments[1] + moments[2];
+}
+
+vec3 addSecondMoments(vec2 firstMomentLhs, vec3 secMomentsLhs, vec2 firstMomentRhs, vec3 secMomentsRhs) {
+    return vec3(
+        secMomentsLhs.xy + secMomentsRhs.xy + 2.*firstMomentLhs.xy*firstMomentRhs.xy,
+        secMomentsLhs.z + secMomentsRhs.z + firstMomentLhs.x*firstMomentRhs.y + firstMomentLhs.y*firstMomentRhs.x);
+}
+
+vec3 combineSecondMoments(vec2 moments[FILTER_COUNT], vec3 secMoments[FILTER_COUNT]) {
+    vec2 moments01 = moments[0] + moments[1];
+    vec3 secMoments01 = addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
+    return addSecondMoments(moments01, secMoments01, moments[2], secMoments[2]);
+}
+
+// TODO: environment map sampling using LEDAR maps for transmitted light
+vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
+    const float SAMPLE_LENGTH_SIGMA = 2.;
+    const float gammaCorrect = 1.;
+    const float lodBias = 0.;
+    const vec3 macronormal = vec3(0, 0, 1.); // TODO: is this right?
+    const vec3 mesonormal = vec3(0, 0, 1.); // TODO: is mesonormal always (0, 0, 1)?
+
+    // TODO: should I compute an LOD for these lookups?
+    vec2 firstMomentsList[FILTER_COUNT] = vec2[FILTER_COUNT](
+        v_wave_blending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
+        v_wave_blending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
+        v_wave_blending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
+    );
+    vec3 secMomentsList[FILTER_COUNT] = vec3[FILTER_COUNT](
+        v_wave_blending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
+        v_wave_blending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
+        v_wave_blending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
+    );
+
+    vec2 firstMoments = combineFirstMoments(firstMomentsList);
+
+    float floorToPixels = floorPixels/floorSize;
+
+    // instead of sampling multiple values, sample ~1.5sigma using a texture lookup
+    vec3 wn = normalize(vec3(-firstMoments.xy, 1.)); 
+    // vec3 wn = v_wave_normal;
+    // float c = abs(dot(wi, wn));
+    // vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi;   
+    vec3 wt = refract(wi, wn, ETA);
+    float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
+
+    vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
+
+    // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
+    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
+    float A = pow(2.*SAMPLE_LENGTH_SIGMA*max(sigma.x, sigma.y), 2.);
+    float eta_wtwn = INV_ETA*abs(dot(wt, wn));
+    // float J = pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*eta_wtwn);
+    float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
+    float alpha = J*A;
+    
+    float solidFootprint = max(alpha*d / abs(dot(wn, wt)), 0.);
+    float lod = max(5., lodBias + log2(solidFootprint));
+
+    // TODO: artifacting? (remove LOD clamp once fixed)
+    vec3 floorIntersect = worldPosition + d*wt;
+    vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
+    vec3 tex = textureProjLod(floorTexture, floorTex, lod).xyz;
+
+    float fresnel = 1. - fresnel(-wi, wn, secMoments);
+    const float maskingShadowing = 1.; // TODO
+    return tex*fresnel*maskingShadowing*gammaCorrect;
+
+    // return vec3(firstMoments, 1.);
+}
+
+void main() {
+    // rays are shot from the camera into a light or the great beyond
+    // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
+
+    color = vec4(LEDARCheaper(v_position, v_camera_normal), 1.);
+    // color = vec4(0., 0., (v_position.z)*4., 1.);
+    // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);
+    // color = vec4(v_wave_blending[0], v_wave_blending[1], 0.5, 1.);
+
+    // vec3 intersect = linePlaneIntersection(v_position, v_camera_normal, floorPosition, floorNormal);
+    // vec3 texCoords = floorTextureMatrix*vec3(intersect.xy, 1.);
+    // color = textureProjLod(floorTexture, texCoords, 8.);
+}
+
+/* This works but it's too slow
 // TODO: environment map sampling using LEDAR maps for transmitted light
 vec3 LEDAREnvironmentMapSampling(vec2 texcoords, vec3 worldPosition, vec3 wi) {
     const int SAMPLES = 3;
@@ -146,60 +205,4 @@ vec3 LEDAREnvironmentMapSampling(vec2 texcoords, vec3 worldPosition, vec3 wi) {
     // return I / S;
     return (I / S)*gammaCorrect;
 }
-
-// TODO: environment map sampling using LEDAR maps for transmitted light
-vec3 LEDARCheaper(vec2 texcoords, vec3 worldPosition, vec3 wi) {
-    const float SAMPLE_LENGTH_SIGMA = 2.;
-    const float gammaCorrect = 1.;
-    const float lodBias = 4.;
-    const vec3 macronormal = vec3(0, 0, 1.); // TODO: is this right?
-    const vec3 mesonormal = vec3(0, 0, 1.); // TODO: is mesonormal always (0, 0, 1)?
-
-    vec2 firstMoments = texture(waveMoments, texcoords).xy;
-    vec3 secMoments = texture(waveSecMoments, texcoords).xyz;
-
-    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-
-    float floorToPixels = floorPixels/floorSize;
-
-    // instead of sampling multiple values, sample ~1.5sigma using a texture lookup
-    vec3 wn = normalize(vec3(-firstMoments.xy, 1.)); 
-    // vec3 wn = v_wave_normal;
-    // float c = abs(dot(wi, wn));
-    // vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi;   
-    vec3 wt = refract(wi, wn, ETA);
-
-    float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
-
-    // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
-    float A = pow(2.*SAMPLE_LENGTH_SIGMA*max(sigma.x, sigma.y), 2.);
-    float eta_wtwn = INV_ETA*abs(dot(wt, wn));
-    // float J = pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*eta_wtwn);
-    float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
-    float alpha = J*A;
-    
-    float solidFootprint = max(alpha*d / abs(dot(wn, wt)), 0.);
-    float lod = max(5., lodBias + log2(solidFootprint));
-
-    // TODO: artifacting? (remove LOD clamp once fixed)
-    vec3 floorIntersect = worldPosition + d*wt;
-    vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
-    vec3 tex = textureProjLod(floorTexture, floorTex, lod).xyz;
-
-    float fresnel = 1. - fresnel(-wi, wn, secMoments);
-    const float maskingShadowing = 1.; // TODO
-    return tex*fresnel*maskingShadowing*gammaCorrect;
-
-    // return vec3(firstMoments, 1.);
-}
-
-void main() {
-    // rays are shot from the camera into a light or the great beyond
-    // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
-
-    color = vec4(LEDARCheaper(v_wave_texcoords, v_position, v_camera_normal), 1.);
-   
-    // vec3 intersect = linePlaneIntersection(v_position, v_camera_normal, floorPosition, floorNormal);
-    // vec3 texCoords = floorTextureMatrix*vec3(intersect.xy, 1.);
-    // color = textureProjLod(floorTexture, texCoords, 8.);
-}
+*/

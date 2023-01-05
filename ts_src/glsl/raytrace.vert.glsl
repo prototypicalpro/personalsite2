@@ -2,26 +2,34 @@
 
 // camera/world position matricies
 uniform mat4 modelMatrix;
+uniform mat4 viewMatrix;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 uniform vec3 cameraPosition;
 
-in vec4 position; // (x, y, z, dxy)
+in vec3 position; // (x, y, z) of render plane
+
+// patch for syntax highlighting
+#define UNROLLED_LOOP_INDEX 0
 
 /// end-pre-strip ///
+
+#define FILTER_COUNT 3
 
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 
-const float ROW_SIZE = 512.;
+const float WIDTH = 256.;
 
-in vec4 partial; // (dxx, dyy, dzx, dzy)
+uniform sampler2D waveDisplacement[FILTER_COUNT];
+uniform mat3 waveTextureMatrix[FILTER_COUNT]; // render object -> wave texture
+uniform float domain;
 
-out vec3 v_position;
-out vec2 v_wave_texcoords;
-out vec3 v_wave_normal;
-out vec3 v_camera_normal;
+out vec2 v_wave_tex_uv[FILTER_COUNT]; // texture coordinates for each filtering grain
+out float v_wave_blending[FILTER_COUNT]; // blending factor to use for each cascade, helps filter tiling
+out vec3 v_position; // position in world space
+out vec3 v_camera_normal; // normal of the camera in world space
 
 vec3 proj(vec4 a) {
     return a.xyz / a.w;
@@ -29,11 +37,29 @@ vec3 proj(vec4 a) {
 
 void main() {
     // set GL position based on the provided matricies
-	gl_Position = projectionMatrix*modelViewMatrix*vec4(position.xyz, 1.0);
-    
-    v_position = proj(modelMatrix*vec4(position.xyz, 1.0));
-    v_wave_texcoords = vec2(mod(float(gl_VertexID), ROW_SIZE), trunc(float(gl_VertexID) / ROW_SIZE)) / ROW_SIZE;
-    vec2 slope = partial.zw / (1. + partial.xy);
-    v_wave_normal = normalize(vec3(-slope, 1));
+    // v_position = proj(modelMatrix*vec4(position.xyz, 1.0));
+    vec3 positionTmp = position.xyz;
+    float camera_distance_approx = distance(proj(modelMatrix*vec4(positionTmp, 1.)), cameraPosition);
+
+    // i < FILTER_COUNT
+    vec3 waveTexCoords;
+    float scale;
+#pragma unroll_loop_start
+    for (int i = 0; i < 3; i++) {
+        scale = domain * waveTextureMatrix[i][0][0];
+        v_wave_blending[i] = UNROLLED_LOOP_INDEX == FILTER_COUNT-1 ? 1. : 1.;// clamp((0.033*(30.0*scale - camera_distance_approx)) / scale, 0., 1.);
+
+        waveTexCoords = waveTextureMatrix[i]*vec3(position.xy, 1.0);
+        v_wave_tex_uv[i] = waveTexCoords.xy / waveTexCoords.z;
+        positionTmp += v_wave_blending[i]*texture(waveDisplacement[UNROLLED_LOOP_INDEX], v_wave_tex_uv[i]).xyz;
+    }
+#pragma unroll_loop_end
+
+    // waveTexCoords = waveTextureMatrix[2]*vec3(position.xy, 1.0);
+    // v_wave_tex_uv[2] = waveTexCoords.xy / waveTexCoords.z;
+    // positionTmp += texture(waveDisplacement[2], v_wave_tex_uv[2]).xyz;
+
+    v_position = proj(modelMatrix*vec4(positionTmp, 1.));
+	gl_Position = projectionMatrix*modelViewMatrix*vec4(positionTmp, 1.);
     v_camera_normal = normalize(v_position - cameraPosition);
 }

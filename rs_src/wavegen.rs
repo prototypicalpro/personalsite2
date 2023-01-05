@@ -10,11 +10,11 @@ use strided::{Stride, MutStride, Strided, MutStrided};
 use crate::{gamma, const_twid};
 
 const GRAVITY: f32 = 9.807;
-pub const WIDTH: usize = 512;
+pub const WIDTH: usize = 256;
 const HALF_WIDTH: usize = WIDTH/2 + 1;
 const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
 pub const SIZE: usize = WIDTH*WIDTH;
-pub const FILTER_COUNT: usize = 1;
+pub const FILTER_COUNT: usize = 3;
 pub const FACTOR_COUNT: usize = 8;
 
 #[derive(Debug, Clone, Default, Copy)]
@@ -25,50 +25,65 @@ pub struct WavePoint {
 }
 
 #[derive(Debug, Clone)]
-pub struct BandpassFilter {
+pub struct WaveWindow {
     edge0: f32,
     edge1: f32,
     edge2: f32,
     edge3: f32,
     min: f32,
-    invert: bool,    
+    invert: bool,
+    dk: f32,    
 }
 
-impl Default for BandpassFilter {
+impl Default for WaveWindow {
     fn default() -> Self {
-        BandpassFilter { edge0: 0., edge1: 0., edge2: 1000000.0, edge3: 1000000.0, min: 0., invert: false }
+        WaveWindow { edge0: 0., edge1: 0., edge2: 1000000.0, edge3: 1000000.0, min: 0., invert: false, dk: 0.0 }
     }
 }
 
-impl BandpassFilter {
-    pub fn new(small_wave_length: f32, big_wave_length: f32, soft_width: f32, min: f32, invert: bool) -> BandpassFilter {
-        BandpassFilter {
+impl WaveWindow {
+    pub fn new_sharp(small_wave_length: f32, big_wave_length: f32) -> WaveWindow {
+        Self::new(small_wave_length, big_wave_length, 0.0, 0.0, false)
+    }
+
+    pub fn new(small_wave_length: f32, big_wave_length: f32, soft_width: f32, min: f32, invert: bool) -> WaveWindow {
+        WaveWindow {
             edge0: small_wave_length - soft_width,
             edge1: small_wave_length,
             edge2: big_wave_length,
             edge3: big_wave_length + soft_width,
             min: min,
-            invert: invert
+            invert: invert,
+            dk: TAU / (big_wave_length + soft_width)
         }
     }
     
     fn smoothstep(edge0: f32, edge1: f32, num: f32) -> f32 {
-        let smoothfactor = (num - edge0) / (edge1 - edge0);
-        if smoothfactor <= 0.0 {
+        if num <= edge0 {
             return 0.0;
-        } else if smoothfactor >= 1.0 {
+        } else if num >= edge1 {
             return 1.0;
         } else {
-            return num*num*(3.0 - (num * 2.0));
+            let t = (num - edge0) / (edge1 - edge0);
+            return t*t*(3.0 - (t*2.0));
         }
     }
 
     pub fn run(&self, k_mag: f32) -> f32 {
-        let wavelength: f32 = TAU / k_mag;
+        let wavelength: f32 = 6. * TAU / k_mag; // TODO: why do I need 6x?
         let stepped = Self::smoothstep(self.edge0, self.edge1, wavelength) - 
             Self::smoothstep(self.edge2, self.edge3, wavelength);
         let clamped = (self.min + (1.0 - self.min)*stepped).clamp(0.0, 1.0);
-        return if self.invert { 1.0 - clamped } else { clamped }
+        
+        if self.invert { 1.0 - clamped } else { clamped }
+    }
+
+    pub fn get_domain(&self) -> f32 {
+        self.edge3
+    }
+
+    pub fn get_dk(&self) -> f32 {
+        self.dk
     }
 }
 
@@ -83,18 +98,16 @@ pub struct WaveBuffers {
 impl Default for WaveBuffers {
     fn default() -> Self {
         WaveBuffers { 
-            static_spectra: box [Default::default(); HALF_SIZE],
-            timevaried_spectra: box [Default::default(); HALF_SIZE],
-            factors: [(); FACTOR_COUNT].map(|_| box [Default::default(); HALF_SIZE]),
-            fft_scratch: [(); FACTOR_COUNT].map(|_| box [Default::default(); HALF_SIZE]),
+            static_spectra: Box::new([Default::default(); HALF_SIZE]),
+            timevaried_spectra: Box::new([Default::default(); HALF_SIZE]),
+            factors: [(); FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
+            fft_scratch: [(); FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct WaveGen {
-    domain: f32,
-    dk: f32,
     capillary_depth: f32,
     jonswap_alpha: f32,
     jonswap_gamma: f32,
@@ -102,8 +115,8 @@ pub struct WaveGen {
     tma_gain: f32,
     hassleman_raisefactor: f32,
     horvath_swell: f32,
-    filters: [BandpassFilter; FILTER_COUNT],
-    rand_gen: Box<[(f32, f32, f32, f32); HALF_SIZE]>,
+    filters: [WaveWindow; FILTER_COUNT],
+    rand_seed: u64
 }
 
 pub enum OceanProp {
@@ -124,31 +137,19 @@ impl WaveGen {
     /// 
     /// # Arguments
     /// 
-    /// * `domain` - Ocean size in meters
     /// * `depth` - Ocean depth in meters
     /// * `wind_speed` - Wind speed 10 meters above water in m/s
     /// * `fetch` - Large number (~800000)
     /// * `damping` - Wave damping from 1-6 (start with 3.3)
     /// * `swell` - Wave swell from 0 - 1
-    pub fn new(domain: f32, depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, filters: [BandpassFilter; FILTER_COUNT]) -> WaveGen {
+    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32; FILTER_COUNT]) -> WaveGen {
         let alpha = 0.076*(wind_speed.powi(2) / (GRAVITY*fetch)).abs().powf(0.22);
         let dimless_fetch = GRAVITY*fetch / wind_speed.powi(2);
         let omega_p = TAU*3.5*(GRAVITY / wind_speed)*dimless_fetch.powf(-0.33);
         let tma_gain = (depth / GRAVITY).sqrt();
         let hassleman_raise = -2.33 - 1.45*((wind_speed*omega_p) / GRAVITY - 1.17);
-        let dk = TAU / domain;
-
-        let mut rng = rand::thread_rng();
-        let norm = Normal::new(0.0_f32, 1.0_f32).unwrap();
-        let distr = Uniform::new(0.0_f32, TAU);
-        let mut rand_gen: Box<[(f32, f32, f32, f32); HALF_SIZE]> = unsafe { Box::new_uninit().assume_init() };
-        rand_gen
-            .iter_mut()
-            .for_each(|el| *el = (norm.sample(&mut rng), norm.sample(&mut rng), distr.sample(&mut rng), distr.sample(&mut rng)));
             
         WaveGen { 
-            domain: domain,
-            dk: dk,
             capillary_depth: depth, 
             jonswap_alpha: alpha, 
             jonswap_gamma: damping, 
@@ -156,17 +157,21 @@ impl WaveGen {
             tma_gain: tma_gain, 
             hassleman_raisefactor: hassleman_raise,
             horvath_swell: swell,
-            filters: filters,
-            rand_gen,
+            filters: [
+                WaveWindow::new_sharp(0., windows[0]),
+                WaveWindow::new_sharp(windows[0], windows[1]),
+                WaveWindow::new_sharp(windows[1], windows[2])
+            ],
+            rand_seed: thread_rng().next_u64(),
         }
     }
 
     pub fn domain(&self) -> f32 {
-        self.domain
+        self.filters.last().unwrap().get_domain()
     }
 
     pub fn make_output_buffer() -> WaveGenOutput {
-        [(); FILTER_COUNT].map(|_| [(); FACTOR_COUNT].map(|_| box [0.0; SIZE]))
+        [(); FILTER_COUNT].map(|_| [(); FACTOR_COUNT].map(|_| Box::new([0.0; SIZE])))
     }
 
     pub fn make_wavebuffers() -> [WaveBuffers; FILTER_COUNT] {
@@ -219,7 +224,18 @@ impl WaveGen {
         (omega, domega_dk)
     }
 
-    fn compute_spectra_impl(&self, k_mag: f32, theta: (f32, f32), filter: f32, i: usize) -> WavePoint {
+    fn get_deterministic_rng(&self, i: usize, k_mag: f32) -> (f32, f32, f32, f32) {
+        let norm = Normal::new(0.0_f32, 1.0_f32).unwrap();
+        let distr = Uniform::new(0.0_f32, TAU);
+        // TODO: verify this works
+        // let seed = self.rand_seed.wrapping_add(i as u64).wrapping_add(k_mag.to_bits() as u64);
+        // let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
+        let mut rng = thread_rng();
+        
+        (norm.sample(&mut rng), norm.sample(&mut rng), distr.sample(&mut rng), distr.sample(&mut rng))
+    }
+
+    fn compute_spectra_impl(&self, dk: f32, k_mag: f32, theta: (f32, f32), filter: f32, i: usize) -> WavePoint {
         if k_mag == 0.0 || filter == 0.0 {
             return WavePoint {
                 pos_spec: Complex32::new(0.0, 0.0),
@@ -232,7 +248,7 @@ impl WaveGen {
         assert!(omega >= 0.0 && omega.is_finite());
         assert!(domega_dk >= 0.0 && domega_dk.is_finite());
 
-        let change_term = self.dk.powi(2)*domega_dk / k_mag;
+        let change_term = dk.powi(2)*domega_dk / k_mag;
         
         let power_base = self.jonswap_power(omega)*self.tma_correct(omega)*change_term;
         assert!(power_base.is_finite());
@@ -242,7 +258,7 @@ impl WaveGen {
         let neg_power = power_base*self.hassleman_direction(omega, theta.1, swell_shape);
         assert!(pos_power.is_finite() && neg_power.is_finite());
     
-        let rng_sample = self.rand_gen[i];
+        let rng_sample = self.get_deterministic_rng(i, k_mag);
         let pos_amp = (2.0*pos_power).abs().sqrt()*rng_sample.0*filter;
         let neg_amp = (2.0*neg_power).abs().sqrt()*rng_sample.1*filter;
         let pos_cmplx = Complex32::from_polar(pos_amp, rng_sample.2);
@@ -251,7 +267,7 @@ impl WaveGen {
         WavePoint { pos_spec: pos_cmplx, neg_spec: neg_cmplx, omega: omega }
     }
 
-    fn par_spectral_iterator(&self) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_ {
+    fn par_spectral_iterator(&self, dk: f32) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_ {
         (0..HALF_SIZE)
             .into_par_iter()
             .map(move |i| {
@@ -263,20 +279,21 @@ impl WaveGen {
                 // let x_rev = (x as isize) - (self.points / 2) as isize;
                 (
                     (
-                        (x as f32)*self.dk,
-                        (y_rev as f32)*self.dk
+                        (x as f32)*dk,
+                        (y_rev as f32)*dk
                     ),
-                    self.dk*(x as f32).hypot(y_rev as f32),
+                    dk*(x as f32).hypot(y_rev as f32),
                     i
                 )
             })
     }
     
-    fn compute_spectra(&self, filter: &BandpassFilter, buffer: &mut Box<[WavePoint; HALF_SIZE]>) {        
-        self.par_spectral_iterator()
+    fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; HALF_SIZE]>) {     
+        let dk = filter.get_dk();   
+        self.par_spectral_iterator(dk)
             .map(|((x, y), k_mag, i)| (k_mag, ((-y).atan2(x), y.atan2(-x)), filter.run(k_mag), i))
-            .map(|(k_mag, theta, filter, i)| self.compute_spectra_impl(k_mag, theta, filter, i))
-            .zip_eq(buffer.as_mut_slice())
+            .map(|(k_mag, theta, filter, i)| self.compute_spectra_impl(dk, k_mag, theta, filter, i))
+            .zip_eq(buffer.par_iter_mut())
             .for_each(|(res, elem)| *elem = res);
     }
 
@@ -291,11 +308,11 @@ impl WaveGen {
                 
                 w.pos_spec*fwd + w.neg_spec*bkwd
             })
-            .zip_eq(out_buffer.as_mut_slice())
+            .zip_eq(out_buffer.par_iter_mut())
             .for_each(|(res, elem)| *elem = res);
     }
 
-    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, out_buffer: &mut [Box<[Complex32; HALF_SIZE]>; 8]) {
+    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, dk: f32, out_buffer: &mut [Box<[Complex32; HALF_SIZE]>; 8]) {
         [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
             .par_iter()
             .zip_eq(out_buffer)
@@ -313,10 +330,10 @@ impl WaveGen {
 
                 timevaried
                     .par_iter()
-                    .zip_eq(self.par_spectral_iterator())
+                    .zip_eq(self.par_spectral_iterator(dk))
                     .map(|(h, ((kx, ky), k_mag, _))| 
                         if k_mag != 0.0 { mapfunc((&h, ((kx, ky), k_mag))) } else { Complex32::zero() })
-                    .zip_eq(buf.as_mut_slice())
+                    .zip_eq(buf.par_iter_mut())
                     .for_each(|(res, elem)| *elem = res);
             });
     }
@@ -460,14 +477,14 @@ impl WaveGen {
     pub fn precompute_spectra(&self, wavebuffers: &mut [WaveBuffers; FILTER_COUNT]) {
         self.filters
             .par_iter()
-            .zip_eq(wavebuffers.as_mut_slice())
+            .zip_eq(wavebuffers.par_iter_mut())
             .for_each(|(filter, wavebuf)| 
                 self.compute_spectra(&filter, &mut wavebuf.static_spectra))
     }
 
-    fn step_one(&self, time: f32, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE]>; FACTOR_COUNT]) {
+    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE]>; FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
-        self.compute_factors(&wavebuf.timevaried_spectra, &mut wavebuf.factors);
+        self.compute_factors(&wavebuf.timevaried_spectra, filter.get_dk(), &mut wavebuf.factors);
         wavebuf.factors
             .par_iter()
             .zip_eq(wavebuf.fft_scratch.par_iter_mut())
@@ -480,7 +497,8 @@ impl WaveGen {
         wavebuffers
             .par_iter_mut()
             .zip_eq(output_buffer.par_iter_mut())
-            .for_each(|(wavebuf, outbuf)|
-                self.step_one(time, wavebuf, outbuf));
+            .zip_eq(self.filters.par_iter())
+            .for_each(|((wavebuf, outbuf), filter)|
+                self.step_one(time, filter, wavebuf, outbuf));
     }
 }

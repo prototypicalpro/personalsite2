@@ -11,7 +11,7 @@ use rayon::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 use itertools::{Itertools, izip};
 use web_sys::console;
-use std::{pin::Pin};
+use std::{pin::Pin, convert::TryFrom};
 
 mod const_twid;
 mod tuples_exact;
@@ -22,7 +22,7 @@ mod product_exact;
 mod collect_into_arrayvec;
 mod util;
 
-use wavegen::{WaveGen, OceanProp, SIZE, WIDTH, FILTER_COUNT, BandpassFilter, WaveGenOutput, FACTOR_COUNT, WaveBuffers};
+use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers};
 
 // #[global_allocator]
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -66,8 +66,8 @@ impl RetBuf {
             field: None,
             wavebuffers: WaveGen::make_wavebuffers(),
             fft_out: WaveGen::make_output_buffer(),
-            pos_out: Pin::new(box [[0.0; PACKED_SIZE]; FILTER_COUNT]),
-            partial_out: Pin::new(box [[0.0; PACKED_SIZE]; FILTER_COUNT]),
+            pos_out: Pin::new(Box::new([[0.0; PACKED_SIZE]; FILTER_COUNT])),
+            partial_out: Pin::new(Box::new([[0.0; PACKED_SIZE]; FILTER_COUNT])),
         }
     }
 
@@ -80,33 +80,28 @@ impl RetBuf {
     }
 }
 
-#[wasm_bindgen]
-pub fn gen_wavefield(domain: f32, depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, output: &mut RetBuf) {
+#[wasm_bindgen(start)]
+pub fn main() {
     console_error_panic_hook::set_once();
-
-    let filters: [BandpassFilter; FILTER_COUNT] = [BandpassFilter::default()];
-
-    let wavefield = WaveGen::new(domain, depth, wind_speed, fetch, damping, swell, filters);
-    wavefield.precompute_spectra(&mut output.wavebuffers);
-    output.field = Some(Box::new(wavefield));
-
-    console::log_1(&"here!".into());
+    console::log_1(&JsValue::from_f64(std::mem::size_of::<RetBuf>() as f64));
 }
 
-fn pack_result(fft_out: &[Box<[f32; SIZE]>; FACTOR_COUNT], domain: f32, pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
+#[wasm_bindgen]
+pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32], output: &mut RetBuf) {
+    let windows = <[f32; FILTER_COUNT]>::try_from(windows).unwrap();
+
+    let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, &windows));
+    wavefield.precompute_spectra(&mut output.wavebuffers);
+    output.field = Some(wavefield);
+}
+
+fn pack_result(fft_out: &[Box<[f32; SIZE]>; FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
     izip!(
         fft_out[OceanProp::HEIGHT as usize].iter(), 
         fft_out[OceanProp::DX as usize].iter(), 
         fft_out[OceanProp::DY as usize].iter(), 
         fft_out[OceanProp::DXY as usize].iter())
-        .enumerate()
-        .flat_map(|(i, (h, x, y, xy))| {
-            // scale xy to [-domain/2, domain/2]
-            // and set origin to top left (-x, +y)
-            let x_pos = (i % WIDTH) as f32 * (domain / WIDTH as f32) - 0.5*domain;
-            let y_pos = 0.5*domain - (i / WIDTH) as f32 * (domain / WIDTH as f32);
-            [x_pos + x, y_pos + y, h.clone(), xy.clone()]
-        })
+        .flat_map(|(h, x, y, xy)| [x.clone(), y.clone(), h.clone(), xy.clone()])
         .zip_eq(pos_out.iter_mut())
         .for_each(|(res, elem)| *elem = res);
 
@@ -137,7 +132,7 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
         .zip_eq(pos_out.par_iter_mut())
         .zip_eq(partial_out.par_iter_mut())
         .for_each(|((fft_slice, pos), partial)| 
-            pack_result(fft_slice, wavegen.domain(), pos, partial));
+            pack_result(fft_slice, pos, partial));
 
     // let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
     // let pix_out: Vec<u8> = fft_out[0]
@@ -154,17 +149,4 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
 
     // Clamped(pix_out)
     // ret
-}
-
-
-fn compute_rendering_data() {
-    // Two real FFTs simultaniously using one c2c IFFT:
-    // https://qr.ae/pvP6xT
-    // http://dsp-book.narod.ru/FFTBB/0270_PDF_C14.pdf
-
-    // x, y, z disp
-    // normals can either be compluted from partials (dydx, dydz, dxdx, dzdz) or approximated from displacement
-    // uvs?
-
-    // returns a list of pointers to arrays
 }

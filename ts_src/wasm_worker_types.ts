@@ -3,21 +3,21 @@ export interface WorkerHandlersWrap {
 }
 
 export interface WorkerHandlers {
-    memoryView: () => Promise<[WebAssembly.Memory, number, number, number]>;
+    memoryView: () => Promise<[WebAssembly.Memory, number, number]>;
     setup: ({
-        domain,
         depth,
         wind_speed,
         fetch,
         damping,
         swell,
+        windows,
     }: {
-        domain: number;
         depth: number;
         wind_speed: number;
         fetch: number;
         damping: number;
         swell: number;
+        windows: [number, number, number];
     }) => Promise<void>;
     render: (arg: {
         time: number;
