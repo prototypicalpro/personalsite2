@@ -97,6 +97,7 @@ vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
     // float c = abs(dot(wi, wn));
     // vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi;   
     vec3 wt = refract(wi, wn, ETA);
+    vec3 wr = reflect(wi, wn);
     float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
 
     vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
@@ -104,22 +105,28 @@ vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
     // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
     vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
     float A = pow(2.*SAMPLE_LENGTH_SIGMA*max(sigma.x, sigma.y), 2.);
+    
+    // transmitted component
     float eta_wtwn = INV_ETA*abs(dot(wt, wn));
-    // float J = pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*eta_wtwn);
     float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
     float alpha = J*A;
-    
     float solidFootprint = max(alpha*d / abs(dot(wn, wt)), 0.);
-    float lod = max(5., lodBias + log2(solidFootprint));
-
-    // TODO: artifacting? (remove LOD clamp once fixed)
+    float lod = max(5., lodBias + log2(solidFootprint)); // TODO: remove LOD clamp?
     vec3 floorIntersect = worldPosition + d*wt;
     vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
-    vec3 tex = textureProjLod(floorTexture, floorTex, lod).xyz;
+    vec3 floorPixel = textureProjLod(floorTexture, floorTex, lod).xyz;
+
+    // reflected component
+    // float J_r = 4.*abs(dot(wn, -wi)*pow(dot(wn, macronormal), 3.));
+    // float alpha_r = J_r*A;
+    // float lod = 0.; // ???
+    // vec3 skyTex = skyTextureMatrix*;
+    // vec3 skyPixel = textureProjLod();
+    // TODO: generate skybox with watercolor effect from https://www.shadertoy.com/view/ttlGDf
 
     float fresnel = 1. - fresnel(-wi, wn, secMoments);
     const float maskingShadowing = 1.; // TODO
-    return tex*fresnel*maskingShadowing*gammaCorrect;
+    return floorPixel*fresnel*maskingShadowing*gammaCorrect;
 
     // return vec3(firstMoments, 1.);
 }

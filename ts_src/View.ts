@@ -27,7 +27,7 @@ export default class View {
     static readonly waveProps = {
         windows: [5, 17, 150] as [number, number, number],
         segments: 1024,
-        depth: 15,
+        depth: 25,
         wind_speed: 5,
         fetch: 500000,
         damping: 3.33,
