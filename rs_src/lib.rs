@@ -83,7 +83,6 @@ impl RetBuf {
 #[wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
-    console::log_1(&JsValue::from_f64(std::mem::size_of::<RetBuf>() as f64));
 }
 
 #[wasm_bindgen]

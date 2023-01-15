@@ -22,22 +22,31 @@ import raytraceFrag from "./glsl/raytrace.frag.glsl";
 // import Tex from "./img/debug.jpg";
 // import Tex from "./img/tex.jpg";
 import Tex from "./img/shapes.jpg";
+import im00 from "./img/skybox/im00.png";
+import im01 from "./img/skybox/im01.png";
+import im02 from "./img/skybox/im02.png";
+import im10 from "./img/skybox/im10.png";
+import im11 from "./img/skybox/im11.png";
+import im12 from "./img/skybox/im12.png";
 
 export default class View {
     static readonly waveProps = {
         windows: [5, 17, 150] as [number, number, number],
-        segments: 1024,
-        depth: 25,
+        segments: 2048,
+        depth: 150,
         wind_speed: 5,
-        fetch: 500000,
+        fetch: 50000,
         damping: 3.33,
         swell: 0.5,
         tiling_off: 0.1,
+        LeadrSampleCount: 9,
+        LeadrSampleSize: 1.8,
     };
 
     worker: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
     camera: THREE.Camera;
+    scene: THREE.Scene;
     wavePosBufs: THREE.BufferAttribute[];
     wavePartialBufs: THREE.BufferAttribute[];
 
@@ -53,10 +62,12 @@ export default class View {
     private partPtr: number;
 
     backTex: THREE.Texture;
+    skyboxTex: THREE.CubeTexture;
 
     constructor(
         canvasElem: HTMLCanvasElement,
         tex: THREE.Texture,
+        cubeTex: THREE.CubeTexture,
         worker: WorkerHandlers,
         memory: [WebAssembly.Memory, number, number]
     ) {
@@ -81,8 +92,10 @@ export default class View {
 
         this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
 
-        this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000);
+        this.camera = new THREE.PerspectiveCamera(90, 1, 0.1, 10000);
         this.camera.position.z = 130;
+
+        this.scene = new THREE.Scene();
 
         this.controls = new OrbitControls(this.camera, canvasElem);
         this.controls.target.set(0, 0, 0);
@@ -93,6 +106,11 @@ export default class View {
         this.backTex.wrapT = THREE.RepeatWrapping;
         this.backTex.magFilter = THREE.LinearFilter;
         this.backTex.minFilter = THREE.LinearMipMapLinearFilter;
+
+        this.skyboxTex = cubeTex;
+        this.skyboxTex.magFilter = THREE.LinearFilter;
+        this.skyboxTex.minFilter = THREE.LinearMipMapLinearFilter;
+        this.scene.background = this.skyboxTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
             View.waveProps.windows[2],
@@ -106,9 +124,11 @@ export default class View {
             fragmentShader: stripHeader(raytraceFrag),
             vertexShader: stripHeader(raytraceVert),
             uniforms: this.makeRaytraceUniforms(),
+            defines: this.makeRaytraceDefines(),
         });
 
         this.oceanMesh = new THREE.Mesh(this.oceanGeo, shaderMaterial);
+        this.scene.add(this.oceanMesh);
 
         this.debugRenderTarget = makeRenderTarget(WIDTH, WIDTH, 4);
 
@@ -126,8 +146,42 @@ export default class View {
         const mem = await worker.memoryView();
         await worker.setup(View.waveProps);
         const tex = await new THREE.TextureLoader().loadAsync(Tex);
+        const cubeTex = await new THREE.CubeTextureLoader().loadAsync([
+            // im12,
+            // im10,
+            // im01,
+            // im00,
+            // im11,
+            // im02,
+            im10, // px (270) clockwise
+            im12, // nx (90)
+            im11, // py (180)
+            im02, // ny
+            im01, // pz (180)
+            im00, // nz
+            // threejs bug in types
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
 
-        return new View(canvasElem, tex, worker, mem);
+        return new View(canvasElem, tex, cubeTex, worker, mem);
+    }
+
+    private makeRaytraceDefines() {
+        const { LeadrSampleCount, LeadrSampleSize } = View.waveProps;
+
+        let Wbar = 0;
+        for (let j = 0; j < LeadrSampleCount; j++) {
+            const pj =
+                j * LeadrSampleSize -
+                0.5 * LeadrSampleSize * (LeadrSampleCount - 1);
+            Wbar += Math.exp(-0.5 * pj * pj);
+        }
+
+        return {
+            LEADR_SAMPLE_COUNT: LeadrSampleCount,
+            LEADR_SAMPLE_SIZE: LeadrSampleSize.toPrecision(21),
+            LEADR_WBAR: Wbar * Wbar,
+        };
     }
 
     private makeRaytraceUniforms() {
@@ -175,6 +229,7 @@ export default class View {
             floorTexture: new THREE.Uniform(this.backTex),
             floorSize: new THREE.Uniform(windows[2]),
             floorPixels: new THREE.Uniform(this.backTex.image.width),
+            skyboxTex: new THREE.Uniform(this.skyboxTex),
         };
     }
 
@@ -199,8 +254,6 @@ export default class View {
         this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
         this.makeTex.render(this.renderer);
 
-        console.log(this.camera.position);
-
         // const out = new Float32Array(PACKED_SIZE_FLOATS);
         // readMultipleRenderTargetPixels(
         //     this.renderer,
@@ -212,7 +265,7 @@ export default class View {
         // console.log(out);
 
         this.renderer.setRenderTarget(null);
-        this.renderer.render(this.oceanMesh, this.camera);
+        this.renderer.render(this.scene, this.camera);
 
         // this.renderer.setRenderTarget(this.debugRenderTarget);
         // this.renderer.render(this.waveMesh, this.camera);

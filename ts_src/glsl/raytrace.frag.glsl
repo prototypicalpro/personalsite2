@@ -1,5 +1,9 @@
 #version 300 es
 
+#define LEADR_SAMPLE_COUNT 3
+#define LEADR_SAMPLE_SIZE 1.
+#define LEADR_WBAR 1.
+
 /// end-pre-strip ///
 
 #define FILTER_COUNT 3
@@ -21,6 +25,9 @@ uniform mat3 floorTextureMatrix; // world space -> floor texture space
 uniform float floorSize; // world space
 uniform float floorPixels;
 uniform sampler2D floorTexture;
+
+// skybox
+uniform samplerCube skyboxTex;
 
 // XYZ of the wave surface, row major
 uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
@@ -66,28 +73,13 @@ vec3 combineSecondMoments(vec2 moments[FILTER_COUNT], vec3 secMoments[FILTER_COU
     vec3 secMoments01 = addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
     return addSecondMoments(moments01, secMoments01, moments[2], secMoments[2]);
 }
-
 // TODO: environment map sampling using LEDAR maps for transmitted light
-vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
+vec3 LEADRCheaper(vec3 worldPosition, vec3 wi, vec2 firstMoments, vec3 secMoments) {
     const float SAMPLE_LENGTH_SIGMA = 2.;
     const float gammaCorrect = 1.;
     const float lodBias = 0.;
     const vec3 macronormal = vec3(0, 0, 1.); // TODO: is this right?
     const vec3 mesonormal = vec3(0, 0, 1.); // TODO: is mesonormal always (0, 0, 1)?
-
-    // TODO: should I compute an LOD for these lookups?
-    vec2 firstMomentsList[FILTER_COUNT] = vec2[FILTER_COUNT](
-        v_wave_blending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
-        v_wave_blending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
-        v_wave_blending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
-    );
-    vec3 secMomentsList[FILTER_COUNT] = vec3[FILTER_COUNT](
-        v_wave_blending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
-        v_wave_blending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
-        v_wave_blending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
-    );
-
-    vec2 firstMoments = combineFirstMoments(firstMomentsList);
 
     float floorToPixels = floorPixels/floorSize;
 
@@ -99,8 +91,6 @@ vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
     vec3 wt = refract(wi, wn, ETA);
     vec3 wr = reflect(wi, wn);
     float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
-
-    vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
 
     // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
     vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
@@ -117,25 +107,108 @@ vec3 LEDARCheaper(vec3 worldPosition, vec3 wi) {
     vec3 floorPixel = textureProjLod(floorTexture, floorTex, lod).xyz;
 
     // reflected component
-    // float J_r = 4.*abs(dot(wn, -wi)*pow(dot(wn, macronormal), 3.));
-    // float alpha_r = J_r*A;
+    float J_r = 4.*abs(dot(wn, -wi)*pow(dot(wn, macronormal), 3.));
+    float alpha_r = J_r*A;
     // float lod = 0.; // ???
-    // vec3 skyTex = skyTextureMatrix*;
-    // vec3 skyPixel = textureProjLod();
-    // TODO: generate skybox with watercolor effect from https://www.shadertoy.com/view/ttlGDf
+    vec3 skyPixel = texture(skyboxTex, wr).rgb;
+    // TODO: generate floor with watercolor effect from https://www.shadertoy.com/view/ttlGDf
 
-    float fresnel = 1. - fresnel(-wi, wn, secMoments);
+    float fresnel = fresnel(-wi, wn, secMoments);
     const float maskingShadowing = 1.; // TODO
-    return floorPixel*fresnel*maskingShadowing*gammaCorrect;
+    return mix(floorPixel, skyPixel, fresnel)*maskingShadowing*gammaCorrect;
+    // return mix(vec3(0., 0., 0.), skyPixel, 1.)*maskingShadowing*gammaCorrect;
 
     // return vec3(firstMoments, 1.);
 }
 
+
+// TODO: environment map sampling using LEDAR maps for transmitted light
+vec3 LEADREnvironmentMapSampling(vec3 worldPosition, vec3 wi, vec2 firstMoments, vec3 secMoments) {
+    const int sampleCount = LEADR_SAMPLE_COUNT;
+    const float sampleLength = LEADR_SAMPLE_SIZE;
+    const float Wbar = LEADR_WBAR;
+    const float gammaCorrect = 1.;
+    const float lodMin = 1.;
+    const vec3 macronormal = vec3(0, 0, 1.); // TODO: is this right?
+
+    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
+    float lodBias = -0.0 + log2(sampleLength * (0.5 / 1.5) * max(sigma.x, sigma.y) * 2048.0);
+
+    float cxy = secMoments.z - firstMoments.x*firstMoments.y;
+    float rxy = cxy/(sigma.x*sigma.y);
+    float rxyTerm = sqrt(1. - rxy*rxy);
+    float A = pow(2.*sampleLength*max(sigma.x, sigma.y)/float(sampleCount), 2.);
+
+    float floorToPixels = floorPixels/floorSize;
+
+    vec3 I = vec3(0, 0, 0);
+
+    for (int j = 0; j < sampleCount; j++) {
+        float pj = float(j)*sampleLength - sampleLength*float((sampleCount - 1) / 2);
+        float Wj = exp(-0.5*pow(pj, 2.));
+
+        for (int k = 0; k < sampleCount; k++) {
+            float pk = float(k)*sampleLength - sampleLength*float((sampleCount - 1) / 2);
+            float Wk = exp(-0.5*pow(pk, 2.));
+
+            float x = firstMoments.x + pj*sigma.x;
+            float y = (rxy*pj + rxyTerm*pk)*sigma.y + firstMoments.y;
+            vec3 wn = normalize(vec3(-x, -y, 1.)); // micronormal
+            float c = abs(dot(wi, wn));
+            // vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi; // transmitted direction (use refract?)
+            // wt = normalize(wt); // TODO: needed?
+            vec3 wt = refract(wi, wn, ETA);
+            // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
+            float eta_wtwn = INV_ETA*dot(wt, wn);
+            float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
+            float alpha = J*A;
+
+            const float maskingShadowing = 1.; // TODO
+
+            float Wn = Wj*Wk;
+            float proj = max(0., dot(wn, -wi)) / dot(wn, macronormal);
+
+            float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
+            float solidFootprint = max(alpha*d / abs(dot(wn, wt)), 0.);
+            float lod = max(lodMin, lodBias + log2(solidFootprint)); // TODO: remove LOD clamp?
+
+            vec3 floorIntersect = worldPosition + d*wt;
+            vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
+            vec3 tex = textureProjLod(floorTexture, floorTex, lod).xyz;
+
+            I += Wn*proj*maskingShadowing*tex;
+        }
+    }
+
+    vec3 wnbar = normalize(vec3(-firstMoments.xy, 1.));
+    float fresnel = 1. - fresnel(-wi, wnbar, secMoments);
+    float proj = abs(dot(wnbar, macronormal)) / abs(dot(wnbar, wi));
+    return (I / Wbar)*proj*fresnel*gammaCorrect;
+}
+
+
 void main() {
+    // TODO: should I compute an LOD for these lookups?
+    vec2 firstMomentsList[FILTER_COUNT] = vec2[FILTER_COUNT](
+        v_wave_blending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
+        v_wave_blending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
+        v_wave_blending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
+    );
+    vec3 secMomentsList[FILTER_COUNT] = vec3[FILTER_COUNT](
+        v_wave_blending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
+        v_wave_blending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
+        v_wave_blending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
+    );
+
+    vec2 firstMoments = combineFirstMoments(firstMomentsList);
+    vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
+
     // rays are shot from the camera into a light or the great beyond
     // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
 
-    color = vec4(LEDARCheaper(v_position, v_camera_normal), 1.);
+    // color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
+    color = vec4(LEADREnvironmentMapSampling(v_position, v_camera_normal, firstMoments, secMoments), 1.);
+
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);
     // color = vec4(v_wave_blending[0], v_wave_blending[1], 0.5, 1.);
@@ -144,72 +217,3 @@ void main() {
     // vec3 texCoords = floorTextureMatrix*vec3(intersect.xy, 1.);
     // color = textureProjLod(floorTexture, texCoords, 8.);
 }
-
-/* This works but it's too slow
-// TODO: environment map sampling using LEDAR maps for transmitted light
-vec3 LEDAREnvironmentMapSampling(vec2 texcoords, vec3 worldPosition, vec3 wi) {
-    const int SAMPLES = 3;
-    const float SAMPLE_LENGTH = 0.9*3./5.;
-    const float gammaCorrect = 0.3;
-    const vec3 macronormal = vec3(0, 0, 1.); // TODO: is this right?
-    const vec3 mesonormal = vec3(0, 0, 1.); // TODO: is mesonormal always (0, 0, 1)?
-
-    vec2 firstMoments = texture(waveMoments, texcoords).xy;
-    vec3 secMoments = texture(waveSecMoments, texcoords).xyz;
-
-    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-    float cxy = secMoments.z - firstMoments.x*firstMoments.y;
-    float rxy = cxy/(sigma.x*sigma.y);
-    float rxyTerm = sqrt(1. - rxy*rxy);
-    float A = pow(2.*SAMPLE_LENGTH*max(sigma.x, sigma.y)/float(SAMPLES), 2.);
-
-    float floorToPixels = floorPixels/floorSize;
-
-    vec3 I = vec3(0, 0, 0);
-    float S = 0.;
-
-    for (int j = 0; j < SAMPLES; j++) {
-        for (int k = 0; k < SAMPLES; k++) {
-            float pj = float(j)*SAMPLE_LENGTH - SAMPLE_LENGTH*float((SAMPLES - 1) / 2);
-            float pk = float(k)*SAMPLE_LENGTH - SAMPLE_LENGTH*float((SAMPLES - 1) / 2);
-            float x = firstMoments.x + pj*sigma.x;
-            float y = (rxy*pj + rxyTerm*pk)*sigma.y + firstMoments.y;
-            vec3 wn = normalize(vec3(-x, -y, 1)); // micronormal
-            float c = abs(dot(wi, wn));
-            vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi; // transmitted direction (use refract?)
-            wt = normalize(wt); // TODO: needed?
-            // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
-            float eta_wtwn = INV_ETA*dot(wt, wn);
-            float J = (pow(dot(wi, wn) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
-            float alpha = J*A;
-
-            const float maskingShadowing = 1.; // TODO
-
-            vec2 W = exp(-0.5*pow(vec2(pj, pk), vec2(2., 2.)));
-            float fresnel = 1. - fresnel(wi, wn, secMoments);
-            float S_ = max(0., dot(wi, wn)) / dot(wn, macronormal);
-
-            float d = linePlaneDistance(worldPosition, wt, floorPosition, floorNormal);
-            float cos_theta = 1. - alpha / TWO_PI; // solid angle to half viewing angle
-            float sin_theta = sqrt(1. - cos_theta*cos_theta);
-            float cos_v = dot(wt, vec3(0, 0, -1.));
-            float sin_v = length(cross(wt, vec3(0, 0, -1.)));
-            // alpha*d^2*cos(theta)/cos(v - theta)
-            float r_ratio = cos_v / (sin_v*sin_theta + cos_v*cos_theta);
-            float projectedSolidAngle = alpha*d*d*r_ratio*r_ratio;
-            float LOD = clamp(log2(projectedSolidAngle*floorToPixels*floorToPixels), 0., 8.);
-
-            vec3 floorIntersect = worldPosition + d*wt;
-            vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
-            vec3 tex = textureProjLod(floorTexture, floorTex, LOD).xyz;
-            // vec3 tex = textureProjLod(floorTexture, floorTex, 0.).xyz;
-
-            S += W.x*W.y*S_;
-            I += W.x*W.y*S*fresnel*maskingShadowing*tex;
-        }
-    }
-
-    // return I / S;
-    return (I / S)*gammaCorrect;
-}
-*/

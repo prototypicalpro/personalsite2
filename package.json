@@ -2,7 +2,7 @@
     "private": true,
     "scripts": {
         "build": "rimraf dist && webpack",
-        "dev": "rimraf dist && webpack-dev-server --open -d source-map"
+        "dev": "rimraf dist && webpack-dev-server -d source-map"
     },
     "devDependencies": {
         "@types/three": "^0.147.0",
