@@ -33,11 +33,11 @@ export default class View {
     static readonly waveProps = {
         windows: [5, 17, 150] as [number, number, number],
         segments: 2048,
-        depth: 150,
+        depth: 5,
         wind_speed: 5,
         fetch: 50000,
         damping: 3.33,
-        swell: 0.5,
+        swell: 0.8,
         tiling_off: 0.1,
         LeadrSampleCount: 9,
         LeadrSampleSize: 1.8,
@@ -105,7 +105,7 @@ export default class View {
         this.backTex.wrapS = THREE.RepeatWrapping;
         this.backTex.wrapT = THREE.RepeatWrapping;
         this.backTex.magFilter = THREE.LinearFilter;
-        this.backTex.minFilter = THREE.LinearMipMapLinearFilter;
+        this.backTex.minFilter = THREE.LinearMipMapNearestFilter;
 
         this.skyboxTex = cubeTex;
         this.skyboxTex.magFilter = THREE.LinearFilter;
