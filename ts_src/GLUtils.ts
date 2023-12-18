@@ -11,15 +11,13 @@ export function stripHeader(shader: string) {
 }
 
 export function getFormatForChannels(channels: number): THREE.PixelFormat {
-    if (channels <= 0 || channels > 4)
+    if (channels <= 0 || channels > 4 || channels === 3)
         throw new Error(`Illegal channel count ${channels}`);
     switch (channels) {
         case 1:
             return THREE.RedFormat;
         case 2:
             return THREE.RGFormat;
-        case 3:
-            return THREE.RGBFormat;
         case 4:
             return THREE.RGBAFormat;
     }

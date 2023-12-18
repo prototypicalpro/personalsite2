@@ -28,6 +28,7 @@ import im02 from "./img/skybox/im02.png";
 import im10 from "./img/skybox/im10.png";
 import im11 from "./img/skybox/im11.png";
 import im12 from "./img/skybox/im12.png";
+import MakeSkybox from "./MakeSkybox";
 
 export default class View {
     static readonly waveProps = {
@@ -42,6 +43,8 @@ export default class View {
         LeadrSampleCount: 9,
         LeadrSampleSize: 1.8,
     };
+
+    static readonly sunDirection = new THREE.Vector3(0, -6, -1).normalize();
 
     worker: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
@@ -62,7 +65,8 @@ export default class View {
     private partPtr: number;
 
     backTex: THREE.Texture;
-    skyboxTex: THREE.CubeTexture;
+
+    makeSkybox: MakeSkybox;
 
     constructor(
         canvasElem: HTMLCanvasElement,
@@ -78,6 +82,7 @@ export default class View {
             canvas: canvasElem,
             stencil: false,
             depth: false,
+            antialias: true,
             powerPreference: "high-performance",
         });
 
@@ -95,6 +100,8 @@ export default class View {
         this.camera = new THREE.PerspectiveCamera(90, 1, 0.1, 10000);
         this.camera.position.z = 130;
 
+        this.makeSkybox = new MakeSkybox(View.sunDirection);
+
         this.scene = new THREE.Scene();
 
         this.controls = new OrbitControls(this.camera, canvasElem);
@@ -107,10 +114,7 @@ export default class View {
         this.backTex.magFilter = THREE.LinearFilter;
         this.backTex.minFilter = THREE.LinearMipMapNearestFilter;
 
-        this.skyboxTex = cubeTex;
-        this.skyboxTex.magFilter = THREE.LinearFilter;
-        this.skyboxTex.minFilter = THREE.LinearMipMapLinearFilter;
-        this.scene.background = this.skyboxTex;
+        this.scene.background = this.makeSkybox.renderTarget.texture;
 
         this.oceanGeo = new THREE.PlaneGeometry(
             View.waveProps.windows[2],
@@ -229,7 +233,9 @@ export default class View {
             floorTexture: new THREE.Uniform(this.backTex),
             floorSize: new THREE.Uniform(windows[2]),
             floorPixels: new THREE.Uniform(this.backTex.image.width),
-            skyboxTex: new THREE.Uniform(this.skyboxTex),
+            sunDirection: new THREE.Uniform(View.sunDirection),
+            sunColor: new THREE.Uniform(new THREE.Vector3(1, 1, 1)),
+            skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
         };
     }
 
@@ -248,6 +254,8 @@ export default class View {
     }
 
     public async update(secs: number) {
+        this.makeSkybox.render(this.renderer, secs);
+
         await this.worker.render({ time: secs });
 
         this.updateGeoBuffers(this.posPtr, this.wavePosBufs);

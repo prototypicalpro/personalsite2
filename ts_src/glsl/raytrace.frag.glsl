@@ -29,6 +29,10 @@ uniform sampler2D floorTexture;
 // skybox
 uniform samplerCube skyboxTex;
 
+// sun
+uniform vec3 sunDirection;
+uniform vec3 sunColor;
+
 // XYZ of the wave surface, row major
 uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
 uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
@@ -143,7 +147,7 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float A) {
 }
 
 // TODO: environment map sampling using LEDAR maps for transmitted light
-vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments) {
+vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy) {
     const int sampleCount = LEADR_SAMPLE_COUNT;
     const float sampleLength = LEADR_SAMPLE_SIZE;
     const float Wbar = LEADR_WBAR;
@@ -151,7 +155,6 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments) {
 
     vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
 
-    float cxy = secMoments.z - firstMoments.x*firstMoments.y;
     float rxy = cxy/(sigma.x*sigma.y);
     float rxyTerm = sqrt(1. - rxy*rxy);
     float A = pow(2.*sampleLength*max(sigma.x, sigma.y)/float(sampleCount), 2.);
@@ -189,7 +192,7 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments) {
     // add small micronormal to fix black artifacts
     const float BIAS = 1.01;
     const float WEIGHT = 0.00001;
-    vec3 mesonormal = normalize(vec3(-firstMoments.xy, 1.)); 
+    vec3 mesonormal = normalize(vec3(-firstMoments, 1.)); 
     vec3 wnfix = normalize(mesonormal - dot(mesonormal, -wi)*1.01*(-wi));
     float fixproj = max(0., dot(wnfix, -wi)) / dot(wnfix, macronormal);
     float f = 1. - fresnel(-wi, wnfix, secMoments);
@@ -200,6 +203,53 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments) {
     return I / S; 
 }
 
+float P22(vec2 wnSlope, vec2 firstMoments, vec3 secMoments, float c_xy) {
+    vec2 wn = wnSlope - firstMoments.xy;
+    float det = secMoments.x*secMoments.y - c_xy*c_xy;
+    float arg_exp = -0.5 * (wn.x*wn.x*secMoments.y + wn.y*wn.y*secMoments.x - 2.0*wn.x*wn.y*c_xy) / det;
+    return 0.15915 * inversesqrt(det)*exp(arg_exp);
+}
+
+float Beckmann(vec3 wn, vec2 firstMoments, vec3 secMoments, float c_xy) {
+    vec2 wnSlope = -wn.xy / wn.z;
+    float p22_ = P22(wnSlope, firstMoments, secMoments, c_xy);
+    return p22_ / pow(wn.z, 4.);
+}
+
+float Lambda(vec3 wi, vec2 firstMoments, vec3 secMoments, float c_xy) {
+    vec2 wp = normalize(wi.xy);
+    float mu_phi = wp.x*firstMoments.x + wp.y*firstMoments.y;
+    float var_phi = wp.x*wp.x*secMoments.x + wp.y*wp.y*secMoments.y + 2.*wp.x*wp.y*c_xy;
+
+    float cot_theta_v = wi.z / sqrt(1. - wi.z*wi.z);
+
+    float nu_v = clamp((cot_theta_v - mu_phi)*inversesqrt(2.*var_phi), 0.001, 1.599);
+    return (1.0 - 1.259*nu_v + 0.396*nu_v*nu_v) / (3.535*nu_v + 2.181*nu_v*nu_v);
+}
+
+vec3 LEADRSpecular(vec3 wi, vec2 firstMoments, vec3 secMoments, float c_xy) {
+    vec3 wh = normalize(-wi + -sunDirection);
+    if (wh.z <= 0.) return vec3(0., 0., 0.);
+
+    float d = Beckmann(wh, firstMoments, secMoments, c_xy);
+
+    float lamda_v = Lambda(-wi, firstMoments, secMoments, c_xy);
+    float lamda_l = Lambda(-sunDirection, firstMoments, secMoments, c_xy);
+    float shadowing = 1. / (1. + lamda_v + lamda_l);
+
+    float invProjArea = 1. / dot(vec3(-firstMoments, 1.), -wi);
+
+    float f = 1. - fresnel(-wi, normalize(vec3(-firstMoments, 1.)), secMoments);
+
+    float I = 0.25*invProjArea*d*f*shadowing;
+
+    vec3 wn = normalize(vec3(-firstMoments.x, -firstMoments.y, 1.)); // micronormal
+    vec3 wr = reflect(wi, wn);
+    vec3 skyVec = wr - sunDirection;
+
+    vec3 sky = texture(skyboxTex, wr).rgb;
+    return I*sky;
+}
 
 void main() {
     // TODO: should I compute an LOD for these lookups?
@@ -216,12 +266,16 @@ void main() {
 
     vec2 firstMoments = combineFirstMoments(firstMomentsList);
     vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
+    float cxy = secMoments.z - firstMoments.x*firstMoments.y;
 
     // rays are shot from the camera into a light or the great beyond
     // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
 
     // color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
-    color = vec4(LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments), 1.);
+    // color = vec4(, 1.);
+    vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
+    color = vec4(color3 + spec3, 1.);
 
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);

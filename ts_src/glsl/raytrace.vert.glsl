@@ -47,7 +47,7 @@ void main() {
 #pragma unroll_loop_start
     for (int i = 0; i < 3; i++) {
         scale = domain * waveTextureMatrix[i][0][0];
-        v_wave_blending[i] = UNROLLED_LOOP_INDEX == FILTER_COUNT-1 ? 1. : 1.;// clamp((0.033*(30.0*scale - camera_distance_approx)) / scale, 0., 1.);
+        v_wave_blending[i] = 1.; // UNROLLED_LOOP_INDEX < 1 ? 0. : 1.;
 
         waveTexCoords = waveTextureMatrix[i]*vec3(position.xy, 1.0);
         v_wave_tex_uv[i] = waveTexCoords.xy / waveTexCoords.z;

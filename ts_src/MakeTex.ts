@@ -8,9 +8,6 @@ import makeTexFrag from "./glsl/maketex.frag.glsl";
 export default class MakeTex {
     // copy verticies into textures using a render pass
     // figure it's faster than using a manual copy and vertex pulling
-
-    readonly pts: number;
-
     makeTexMat: THREE.RawShaderMaterial;
     makeTexMeshs: THREE.Points[];
     blankCamera: THREE.Camera;
@@ -72,7 +69,13 @@ export default class MakeTex {
 
     render(renderer: THREE.WebGLRenderer) {
         // console.log(this.makeTexMeshs);
-        if (!this.makeTexMeshs[0].geometry.attributes["wavePosition"].array)
+        if (
+            !(
+                this.makeTexMeshs[0].geometry.attributes[
+                    "wavePosition"
+                ] as THREE.BufferAttribute
+            ).array
+        )
             throw new Error("Geometry attributes not updated!");
 
         for (let i = 0; i < FILTER_COUNT; i++) {
