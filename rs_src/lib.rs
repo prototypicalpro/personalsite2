@@ -3,7 +3,6 @@
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(iter_collect_into)]
 #![feature(new_uninit)]
-#![feature(box_syntax)]
 
 use wasm_bindgen::{prelude::*};
 extern crate console_error_panic_hook;

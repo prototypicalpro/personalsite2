@@ -1,9 +1,3 @@
 [submodule "lib/wasm-bindgen-rayon"]
 	path = lib/wasm-bindgen-rayon
-	url = https://github.com/GoogleChromeLabs/wasm-bindgen-rayon.git
-[submodule "lib/strided-rs"]
-	path = lib/strided-rs
-	url = git@github.com:prototypicalpro/strided-rs.git
-[submodule "lib/three.js"]
-	path = lib/three.js
-	url = git@github.com:prototypicalpro/three.js.git
+	url = https://github.com/RReverser/wasm-bindgen-rayon.git

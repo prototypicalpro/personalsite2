@@ -10,9 +10,7 @@
         ],
         "baseUrl": "./",
         // Gives error if there are implied "<any>" types.
-        "noImplicitAny": true,
-        // Allows you to access non-constant properties, such as object[keyVar]
-        "suppressImplicitAnyIndexErrors": true
+        "noImplicitAny": true
     },
     "exclude": [
         "node_modules"

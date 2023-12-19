@@ -248,7 +248,7 @@ export default class View {
                 PACKED_SIZE_FLOATS
             );
             geoBufs[i].array = floatView;
-            geoBufs[i].count = PACKED_SIZE;
+            (geoBufs[i].count as number) = PACKED_SIZE;
             geoBufs[i].needsUpdate = true;
         }
     }
