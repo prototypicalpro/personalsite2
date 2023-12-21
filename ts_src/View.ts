@@ -73,7 +73,7 @@ export default class View {
         tex: THREE.Texture,
         cubeTex: THREE.CubeTexture,
         worker: WorkerHandlers,
-        memory: [WebAssembly.Memory, number, number]
+        memory: [WebAssembly.Memory, number, number],
     ) {
         [this.memory, this.posPtr, this.partPtr] = memory;
 
@@ -114,13 +114,14 @@ export default class View {
         this.backTex.magFilter = THREE.LinearFilter;
         this.backTex.minFilter = THREE.LinearMipMapNearestFilter;
 
-        this.scene.background = this.makeSkybox.renderTarget.texture;
+        // this.scene.background = this.makeSkybox.renderTarget.texture;
+        this.scene.background = cubeTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
             View.waveProps.windows[2],
             View.waveProps.windows[2],
             View.waveProps.segments,
-            View.waveProps.segments
+            View.waveProps.segments,
         );
 
         const shaderMaterial = new THREE.ShaderMaterial({
@@ -145,7 +146,7 @@ export default class View {
 
     static async MakeView(
         canvasElem: HTMLCanvasElement,
-        worker: WorkerHandlers
+        worker: WorkerHandlers,
     ) {
         const mem = await worker.memoryView();
         await worker.setup(View.waveProps);
@@ -163,9 +164,7 @@ export default class View {
             im02, // ny
             im01, // pz (180)
             im00, // nz
-            // threejs bug in types
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ] as any);
+        ]);
 
         return new View(canvasElem, tex, cubeTex, worker, mem);
     }
@@ -201,7 +200,7 @@ export default class View {
                 -1 / child_domain,
                 0,
                 tiling_off, // TODO: offset
-                tiling_off
+                tiling_off,
             );
             waveTextureMatrix.push(mat);
         }
@@ -213,21 +212,21 @@ export default class View {
             1 / windows[2],
             0,
             0,
-            0
+            0,
         );
 
         return {
             waveDisplacement: new THREE.Uniform(
-                this.makeTex.getDisplacementTexs()
+                this.makeTex.getDisplacementTexs(),
             ),
             waveMoments: new THREE.Uniform(this.makeTex.getFirstMomentTexs()),
             waveSecMoments: new THREE.Uniform(
-                this.makeTex.getSecondMomentTexs()
+                this.makeTex.getSecondMomentTexs(),
             ),
             waveTextureMatrix: new THREE.Uniform(waveTextureMatrix),
             domain: new THREE.Uniform(View.waveProps.windows[2]),
             floorPosition: new THREE.Uniform(
-                new THREE.Vector3(0, 0, -View.waveProps.depth)
+                new THREE.Vector3(0, 0, -View.waveProps.depth),
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
             floorTexture: new THREE.Uniform(this.backTex),
@@ -235,7 +234,8 @@ export default class View {
             floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
             sunColor: new THREE.Uniform(new THREE.Vector3(1, 1, 1)),
-            skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
+            // skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
+            skyboxTex: new THREE.Uniform(this.scene.background),
         };
     }
 
@@ -245,7 +245,7 @@ export default class View {
             const floatView = new Float32Array(
                 this.memory.buffer,
                 ptr + offset,
-                PACKED_SIZE_FLOATS
+                PACKED_SIZE_FLOATS,
             );
             geoBufs[i].array = floatView;
             (geoBufs[i].count as number) = PACKED_SIZE;
@@ -254,7 +254,7 @@ export default class View {
     }
 
     public async update(secs: number) {
-        this.makeSkybox.render(this.renderer, secs);
+        // this.makeSkybox.render(this.renderer, secs);
 
         await this.worker.render({ time: secs });
 
