@@ -13,7 +13,7 @@ async function init() {
     const handlers = await Comlink.wrap<WorkerHandlersWrap>(
         new Worker(new URL("./wasm_worker", import.meta.url), {
             type: "module",
-        })
+        }),
     ).handlers;
 
     const view = await View.MakeView(canvas, handlers);
@@ -26,8 +26,8 @@ async function init() {
 
         requestAnimationFrame(cb);
     };
-    renderButton.addEventListener("click", () => cb(1000.0));
-    // requestAnimationFrame(cb);
+    // renderButton.addEventListener("click", () => cb(1000.0));
+    requestAnimationFrame(cb);
 }
 
 init();

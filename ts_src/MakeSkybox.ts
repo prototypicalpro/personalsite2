@@ -31,7 +31,7 @@ export default class MakeSkybox {
             zRow.y,
             xRow.z,
             yRow.z,
-            zRow.z
+            zRow.z,
         );
     }
 
@@ -43,7 +43,7 @@ export default class MakeSkybox {
             uniforms: {
                 sunDirection: new THREE.Uniform(sunDirection),
                 sunRotation: new THREE.Uniform(
-                    MakeSkybox.makeRotationFromSunDirection(sunDirection)
+                    MakeSkybox.makeRotationFromSunDirection(sunDirection),
                 ),
                 radThresh: new THREE.Uniform(MakeSkybox.skyboxOpts.radThresh),
                 speed: new THREE.Uniform(MakeSkybox.skyboxOpts.speed),
@@ -52,10 +52,9 @@ export default class MakeSkybox {
             },
             side: THREE.DoubleSide,
         });
-        debugger;
         this.makeSkyboxMesh = new THREE.Mesh(
             new THREE.SphereGeometry(10, 256, 128),
-            this.makeSkyboxMat
+            this.makeSkyboxMat,
         );
         this.renderTarget = new THREE.WebGLCubeRenderTarget(1024, {
             generateMipmaps: true,

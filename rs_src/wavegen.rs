@@ -200,13 +200,20 @@ impl WaveGen {
     }
 
     fn hassleman_direction(&self, omega: f32, theta: f32, swell_shape: f32) -> f32 {
-        let s = self.hassleman_shape(omega) + swell_shape;
-        let normalization = ((2.0*s - 1.0).exp2() / PI)*(gamma::gamma(s + 1.0).powi(2) / gamma::gamma(2.0*s + 1.0));
-        normalization*(0.5*theta).cos().abs().powf(2.0*s)
+        // TODO: better approx that doesn't clip f32 with gamma func
+        
+        let s = (self.hassleman_shape(omega) + swell_shape) as f64;
+        assert!(s.is_finite(), "s = {}", s);
+        let normalization = ((2.0*s - 1.0).exp2() / std::f64::consts::PI)*(gamma::gamma(s + 1.0).powi(2) / gamma::gamma(2.0*s + 1.0));
+        let norm_f32 = normalization as f32;
+        assert!(norm_f32.is_finite(), "omega = {}, omega_p = {}, swell = {}, norm = {}, s = {}", omega, self.omega_p, swell_shape, normalization, s);
+        let ret = norm_f32*(0.5*theta).cos().abs().powf(2.0*(s as f32));
+        assert!(ret.is_finite(), "ret = {}, norm = {}, s = {}", ret, normalization, s);
+        ret
     }
 
     fn horvath_swell_shape(&self, omega: f32) -> f32 {
-        16.0*(omega / self.omega_p).tanh()*self.horvath_swell.powi(2)
+        16.*(self.omega_p / omega).tanh()*self.horvath_swell.powi(2)
     }
 
     fn capilary_dispersion(&self, k_mag: f32) -> (f32, f32) {
@@ -227,7 +234,7 @@ impl WaveGen {
     fn get_deterministic_rng(&self, i: usize, k_mag: f32) -> (f32, f32, f32, f32) {
         let norm = Normal::new(0.0_f32, 1.0_f32).unwrap();
         let distr = Uniform::new(0.0_f32, TAU);
-        // TODO: verify this works
+        // TODO: this is slow, fix it
         // let seed = self.rand_seed.wrapping_add(i as u64).wrapping_add(k_mag.to_bits() as u64);
         // let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
         let mut rng = thread_rng();
@@ -254,9 +261,12 @@ impl WaveGen {
         assert!(power_base.is_finite());
         let swell_shape = self.horvath_swell_shape(omega);
         assert!(swell_shape.is_finite());
-        let pos_power = power_base*self.hassleman_direction(omega, theta.0, swell_shape);
+        let pos_dir = self.hassleman_direction(omega, theta.0, swell_shape);
+        let pos_power = power_base*pos_dir;
         let neg_power = power_base*self.hassleman_direction(omega, theta.1, swell_shape);
-        assert!(pos_power.is_finite() && neg_power.is_finite());
+        assert!(pos_power.is_finite() && neg_power.is_finite(), 
+            "power_base = {}, pos_power = {}, neg_power = {}, swell_shape = {}, omega = {}, dir = {}", 
+            power_base, pos_power, neg_power, swell_shape, omega, pos_dir);
     
         let rng_sample = self.get_deterministic_rng(i, k_mag);
         let pos_amp = (2.0*pos_power).abs().sqrt()*rng_sample.0*filter;
@@ -267,7 +277,7 @@ impl WaveGen {
         WavePoint { pos_spec: pos_cmplx, neg_spec: neg_cmplx, omega: omega }
     }
 
-    fn par_spectral_iterator(&self, dk: f32) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_ {
+    fn par_spectral_iterator(&self, domain: f32) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_ {
         (0..HALF_SIZE)
             .into_par_iter()
             .map(move |i| {
@@ -275,22 +285,16 @@ impl WaveGen {
                 let x = i / WIDTH;
                 let y = i % WIDTH;
                 let y_rev = if y <= WIDTH / 2 { y as isize } else { y as isize - WIDTH as isize };
-                // let y_rev = (y as isize) - (self.points / 2) as isize;
-                // let x_rev = (x as isize) - (self.points / 2) as isize;
-                (
-                    (
-                        (x as f32)*dk,
-                        (y_rev as f32)*dk
-                    ),
-                    dk*(x as f32).hypot(y_rev as f32),
-                    i
-                )
+                let ki = (x as f32) * TAU / domain;
+                let kj = (y_rev as f32) * TAU / domain;
+                ((ki, kj), ki.hypot(kj), i)
             })
     }
     
     fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; HALF_SIZE]>) {     
         let dk = filter.get_dk();   
-        self.par_spectral_iterator(dk)
+        let domain = filter.get_domain();
+        self.par_spectral_iterator(domain)
             .map(|((x, y), k_mag, i)| (k_mag, ((-y).atan2(x), y.atan2(-x)), filter.run(k_mag), i))
             .map(|(k_mag, theta, filter, i)| self.compute_spectra_impl(dk, k_mag, theta, filter, i))
             .zip_eq(buffer.par_iter_mut())
@@ -312,7 +316,7 @@ impl WaveGen {
             .for_each(|(res, elem)| *elem = res);
     }
 
-    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, dk: f32, out_buffer: &mut [Box<[Complex32; HALF_SIZE]>; 8]) {
+    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, domain: f32, dk: f32, out_buffer: &mut [Box<[Complex32; HALF_SIZE]>; 8]) {
         [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
             .par_iter()
             .zip_eq(out_buffer)
@@ -330,7 +334,7 @@ impl WaveGen {
 
                 timevaried
                     .par_iter()
-                    .zip_eq(self.par_spectral_iterator(dk))
+                    .zip_eq(self.par_spectral_iterator(domain))
                     .map(|(h, ((kx, ky), k_mag, _))| 
                         if k_mag != 0.0 { mapfunc((&h, ((kx, ky), k_mag))) } else { Complex32::zero() })
                     .zip_eq(buf.par_iter_mut())
@@ -484,7 +488,7 @@ impl WaveGen {
 
     fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE]>; FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
-        self.compute_factors(&wavebuf.timevaried_spectra, filter.get_dk(), &mut wavebuf.factors);
+        self.compute_factors(&wavebuf.timevaried_spectra, filter.get_domain(), filter.get_dk(), &mut wavebuf.factors);
         wavebuf.factors
             .par_iter()
             .zip_eq(wavebuf.fft_scratch.par_iter_mut())

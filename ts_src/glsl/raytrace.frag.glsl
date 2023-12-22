@@ -1,8 +1,8 @@
 #version 300 es
 
-#define LEADR_SAMPLE_COUNT 3
+#define LEADR_SAMPLE_COUNT 1
 #define LEADR_SAMPLE_SIZE 1.
-#define LEADR_WBAR 1.
+#define LEADR_WEIGHTS vec4(0, 0, 0, 0)
 
 /// end-pre-strip ///
 
@@ -77,6 +77,7 @@ vec3 combineSecondMoments(vec2 moments[FILTER_COUNT], vec3 secMoments[FILTER_COU
     vec3 secMoments01 = addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
     return addSecondMoments(moments01, secMoments01, moments[2], secMoments[2]);
 }
+
 // TODO: environment map sampling using LEDAR maps for transmitted light
 vec3 LEADRCheaper(vec3 worldPosition, vec3 wi, vec2 firstMoments, vec3 secMoments) {
     const float SAMPLE_LENGTH_SIGMA = 2.;
@@ -146,47 +147,54 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float A) {
     return textureProjLod(floorTexture, floorTex, lod).xyz;
 }
 
+vec3 sampleReflectLEADR(vec3 wi, vec3 wn, float lodOffset) {
+    const vec3 macronormal = vec3(0, 0, 1.);
+    const float lodMin = 0.;
+    const float lodBias = 0.;
+
+    vec3 wr = reflect(wi, wn);
+    float wnz_bar = abs(wn.z);
+    float J = 4.*abs(dot(wi, wn))*wnz_bar*wnz_bar*wnz_bar;
+
+    float lod = 0.72 * log(max(0.0001, J * (0.5 / 1.5))) + lodOffset + lodBias;
+    lod = max(lodMin, lod); // TODO: remove LOD clamp?
+
+    return textureLod(skyboxTex, wr, lod).xyz;
+}
+
 // TODO: environment map sampling using LEDAR maps for transmitted light
 vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy) {
-    const int sampleCount = LEADR_SAMPLE_COUNT;
-    const float sampleLength = LEADR_SAMPLE_SIZE;
-    const float Wbar = LEADR_WBAR;
     const vec3 macronormal = vec3(0, 0, 1.);
+    // pj, pi, Wj, Wi
+    const vec4[LEADR_SAMPLE_COUNT*LEADR_SAMPLE_COUNT] weights = vec4[] (
+        LEADR_WEIGHTS
+    );
 
     vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-
+    float lodOffset = -1.0 + log2(LEADR_SAMPLE_SIZE * (0.5 / 1.5) * max(sigma.x, sigma.y) * 2048.0);
     float rxy = cxy/(sigma.x*sigma.y);
     float rxyTerm = sqrt(1. - rxy*rxy);
-    float A = pow(2.*sampleLength*max(sigma.x, sigma.y)/float(sampleCount), 2.);
+    // float A = pow(2.*LEADR_SAMPLE_SIZE*max(sigma.x, sigma.y)/float(LEADR_SAMPLE_COUNT), 2.);
 
     // LEADR mapping supplimental algorithm 1
     vec3 I = vec3(0, 0, 0);
     vec3 S = vec3(0, 0, 0);
 
-    for (int j = 0; j < sampleCount; j++) {
-        float pj = float(j)*sampleLength - sampleLength*float((sampleCount - 1) / 2);
-        float Wj = exp(-0.5*pow(pj, 2.)) / Wbar;
+    for (int i = 0; i < LEADR_SAMPLE_COUNT*LEADR_SAMPLE_COUNT; i++) {
+        vec4 wvec = weights[i];
 
-        for (int k = 0; k < sampleCount; k++) {
-            float pk = float(k)*sampleLength - sampleLength*float((sampleCount - 1) / 2);
-            float Wk = exp(-0.5*pow(pk, 2.)) / Wbar;
+        float x = firstMoments.x + wvec.x*sigma.x;
+        float y = (rxy*wvec.x + rxyTerm*wvec.y)*sigma.y + firstMoments.y;
+        vec3 wn = normalize(vec3(-x, -y, 1.)); // micronormal
+        float c = abs(dot(wi, wn));
 
-            float x = firstMoments.x + pj*sigma.x;
-            float y = (rxy*pj + rxyTerm*pk)*sigma.y + firstMoments.y;
-            vec3 wn = normalize(vec3(-x, -y, 1.)); // micronormal
-            float c = abs(dot(wi, wn));
-            // vec3 wt = (ETA*c - sign(dot(wi, macronormal))*sqrt(1. + ETA*ETA*(c*c - 1.)))*wn - ETA*wi; // transmitted direction (use refract?)
-            // wt = normalize(wt); // TODO: needed?
+        float Wn = wvec.z*wvec.w;
+        float proj = max(0., dot(wn, -wi)) / wn.z;
+        float f = 1. - fresnel(-wi, wn, secMoments);
 
-            float Wn = Wj*Wk;
-            float proj = max(0., dot(wn, -wi)) / dot(wn, macronormal);
-            float f = 1. - fresnel(-wi, wn, secMoments);
-
-            vec3 tex = sampleRefractLEADR(wi, wn, A);
-
-            I += Wn*proj*tex*f;
-            S += Wn*proj;
-        }
+        vec3 tex = sampleReflectLEADR(wi, wn, lodOffset);
+        I += Wn*proj*tex*f;
+        S += Wn*proj;
     }
 
     // add small micronormal to fix black artifacts
@@ -195,12 +203,14 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, fl
     vec3 mesonormal = normalize(vec3(-firstMoments, 1.)); 
     vec3 wnfix = normalize(mesonormal - dot(mesonormal, -wi)*1.01*(-wi));
     float fixproj = max(0., dot(wnfix, -wi)) / dot(wnfix, macronormal);
-    float f = 1. - fresnel(-wi, wnfix, secMoments);
-    vec3 tex = sampleRefractLEADR(wi, wnfix, A);
-    I += WEIGHT*fixproj*f*tex;
+    float fbar = 1. - fresnel(-wi, wnfix, secMoments);
+    vec3 texbar = sampleReflectLEADR(wi, wnfix, lodOffset);
+    I += WEIGHT*fixproj*fbar*texbar;
     S += WEIGHT*fixproj;
 
-    return I / S; 
+    // vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
+    // return wn.z*I/dot(wn, -wi); 
+    return I / S;
 }
 
 float P22(vec2 wnSlope, vec2 firstMoments, vec3 secMoments, float c_xy) {
@@ -273,10 +283,10 @@ void main() {
 
     // color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
-    vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    // vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
-    // color = vec4(color3 + spec3, 1.);
-    color = vec4(color3, 1.);
+    vec3 color3 = 2.*LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
+    color = vec4(color3 + spec3, 1.);
+    // color = vec4(color3, 1.);
 
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);

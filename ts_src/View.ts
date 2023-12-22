@@ -1,11 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import {
-    stripHeader,
-    makeDataTexture,
-    makeRenderTarget,
-    readMultipleRenderTargetPixels,
-} from "./GLUtils";
+import { stripHeader, makeRenderTarget } from "./GLUtils";
 import { WorkerHandlers } from "./wasm_worker_types";
 import {
     WIDTH,
@@ -32,15 +27,15 @@ import MakeSkybox from "./MakeSkybox";
 
 export default class View {
     static readonly waveProps = {
-        windows: [5, 17, 150] as [number, number, number],
-        segments: 2048,
-        depth: 5,
-        wind_speed: 5,
-        fetch: 50000,
+        windows: [5, 17, 100] as [number, number, number],
+        segments: 1024,
+        depth: 5000,
+        wind_speed: 1000,
+        fetch: 500000000,
         damping: 3.33,
-        swell: 0.8,
+        swell: 0.7,
         tiling_off: 0.1,
-        LeadrSampleCount: 9,
+        LeadrSampleCount: 5,
         LeadrSampleSize: 1.8,
     };
 
@@ -172,18 +167,24 @@ export default class View {
     private makeRaytraceDefines() {
         const { LeadrSampleCount, LeadrSampleSize } = View.waveProps;
 
-        let Wbar = 0;
-        for (let j = 0; j < LeadrSampleCount; j++) {
-            const pj =
-                j * LeadrSampleSize -
-                0.5 * LeadrSampleSize * (LeadrSampleCount - 1);
-            Wbar += Math.exp(-0.5 * pj * pj);
-        }
+        const halfSpace = (LeadrSampleSize * (LeadrSampleCount - 1)) / 2;
+        const pRay = Array.from(
+            { length: LeadrSampleCount },
+            (_v, i) => LeadrSampleSize * i - halfSpace,
+        );
+        const weights = pRay.map((p) => Math.exp(-0.5 * p * p));
+        const preinitVals = pRay.flatMap((pj, j) =>
+            pRay.map(
+                (pi, i) => `vec4(${pj}, ${pi}, ${weights[j]}, ${weights[i]})`,
+            ),
+        );
+
+        console.log(preinitVals);
 
         return {
             LEADR_SAMPLE_COUNT: LeadrSampleCount,
             LEADR_SAMPLE_SIZE: LeadrSampleSize.toPrecision(21),
-            LEADR_WBAR: Wbar * Wbar,
+            LEADR_WEIGHTS: preinitVals.join(", "),
         };
     }
 
