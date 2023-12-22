@@ -37,9 +37,10 @@ uniform vec3 sunColor;
 uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
 uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
 uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
+uniform float waveBlending[FILTER_COUNT];
 
 in vec2 v_wave_tex_uv[FILTER_COUNT];
-in float v_wave_blending[FILTER_COUNT];
+// in float v_wave_blending[FILTER_COUNT];
 in vec3 v_position; // world space
 in vec3 v_camera_normal;
 
@@ -264,14 +265,14 @@ vec3 LEADRSpecular(vec3 wi, vec2 firstMoments, vec3 secMoments, float c_xy) {
 void main() {
     // TODO: should I compute an LOD for these lookups?
     vec2 firstMomentsList[FILTER_COUNT] = vec2[FILTER_COUNT](
-        v_wave_blending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
-        v_wave_blending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
-        v_wave_blending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
+        waveBlending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
+        waveBlending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
+        waveBlending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
     );
     vec3 secMomentsList[FILTER_COUNT] = vec3[FILTER_COUNT](
-        v_wave_blending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
-        v_wave_blending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
-        v_wave_blending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
+        waveBlending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
+        waveBlending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
+        waveBlending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
     );
 
     vec2 firstMoments = combineFirstMoments(firstMomentsList);

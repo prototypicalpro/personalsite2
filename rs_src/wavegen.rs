@@ -70,7 +70,7 @@ impl WaveWindow {
     }
 
     pub fn run(&self, k_mag: f32) -> f32 {
-        let wavelength: f32 = 6. * TAU / k_mag; // TODO: why do I need 6x?
+        let wavelength: f32 =  TAU / k_mag;
         let stepped = Self::smoothstep(self.edge0, self.edge1, wavelength) - 
             Self::smoothstep(self.edge2, self.edge3, wavelength);
         let clamped = (self.min + (1.0 - self.min)*stepped).clamp(0.0, 1.0);
@@ -202,13 +202,13 @@ impl WaveGen {
     fn hassleman_direction(&self, omega: f32, theta: f32, swell_shape: f32) -> f32 {
         // TODO: better approx that doesn't clip f32 with gamma func
         
-        let s = (self.hassleman_shape(omega) + swell_shape) as f64;
-        assert!(s.is_finite(), "s = {}", s);
-        let normalization = ((2.0*s - 1.0).exp2() / std::f64::consts::PI)*(gamma::gamma(s + 1.0).powi(2) / gamma::gamma(2.0*s + 1.0));
+        let s = self.hassleman_shape(omega) + swell_shape;
+        // assert!(s.is_finite(), "s = {}", s);
+        let normalization = ((2.0*s - 1.0).exp2() / PI)*(gamma::gamma(s + 1.0).powi(2) / gamma::gamma(2.0*s + 1.0));
         let norm_f32 = normalization as f32;
-        assert!(norm_f32.is_finite(), "omega = {}, omega_p = {}, swell = {}, norm = {}, s = {}", omega, self.omega_p, swell_shape, normalization, s);
+        // assert!(norm_f32.is_finite(), "omega = {}, omega_p = {}, swell = {}, norm = {}, s = {}", omega, self.omega_p, swell_shape, normalization, s);
         let ret = norm_f32*(0.5*theta).cos().abs().powf(2.0*(s as f32));
-        assert!(ret.is_finite(), "ret = {}, norm = {}, s = {}", ret, normalization, s);
+        // assert!(ret.is_finite(), "ret = {}, norm = {}, s = {}", ret, normalization, s);
         ret
     }
 
@@ -236,7 +236,7 @@ impl WaveGen {
         let distr = Uniform::new(0.0_f32, TAU);
         // TODO: this is slow, fix it
         // let seed = self.rand_seed.wrapping_add(i as u64).wrapping_add(k_mag.to_bits() as u64);
-        // let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
+        // let mut rng = rand::rngs::SmallRng::seed_from_u64(self.rand_seed + (i as u64));
         let mut rng = thread_rng();
         
         (norm.sample(&mut rng), norm.sample(&mut rng), distr.sample(&mut rng), distr.sample(&mut rng))

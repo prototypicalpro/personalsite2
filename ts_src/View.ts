@@ -27,13 +27,15 @@ import MakeSkybox from "./MakeSkybox";
 
 export default class View {
     static readonly waveProps = {
-        windows: [5, 17, 100] as [number, number, number],
-        segments: 1024,
-        depth: 5000,
-        wind_speed: 1000,
-        fetch: 500000000,
-        damping: 3.33,
-        swell: 0.7,
+        windows: [0.1, 1, 10] as [number, number, number],
+        blending: [0.1, 0.5, 1],
+        timeScale: 0.1,
+        segments: 2048,
+        depth: 10,
+        wind_speed: 10,
+        fetch: 1000000,
+        damping: 3.3,
+        swell: 0.9,
         tiling_off: 0.1,
         LeadrSampleCount: 5,
         LeadrSampleSize: 1.8,
@@ -93,7 +95,7 @@ export default class View {
         this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
 
         this.camera = new THREE.PerspectiveCamera(90, 1, 0.1, 10000);
-        this.camera.position.z = 130;
+        this.camera.position.z = 1;
 
         this.makeSkybox = new MakeSkybox(View.sunDirection);
 
@@ -189,7 +191,7 @@ export default class View {
     }
 
     private makeRaytraceUniforms() {
-        const { tiling_off, windows } = View.waveProps;
+        const { tiling_off, windows, blending } = View.waveProps;
         const waveTextureMatrix = [];
         for (let i = 0; i < FILTER_COUNT; i++) {
             const child_domain = View.waveProps.windows[i];
@@ -237,6 +239,7 @@ export default class View {
             sunColor: new THREE.Uniform(new THREE.Vector3(1, 1, 1)),
             // skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
             skyboxTex: new THREE.Uniform(this.scene.background),
+            waveBlending: new THREE.Uniform(blending),
         };
     }
 
@@ -257,7 +260,7 @@ export default class View {
     public async update(secs: number) {
         // this.makeSkybox.render(this.renderer, secs);
 
-        await this.worker.render({ time: secs });
+        await this.worker.render({ time: secs * View.waveProps.timeScale });
 
         this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
         this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);

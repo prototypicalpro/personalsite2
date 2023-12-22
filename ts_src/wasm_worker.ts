@@ -33,7 +33,7 @@ async function initHandlers() {
             initial: 2048 * 8,
             maximum: 65536,
             shared: true,
-        })
+        }),
     );
     const retbuf = new multiThread.RetBuf();
 
@@ -47,7 +47,7 @@ async function initHandlers() {
         supportsThreads: hasThreads,
         memoryView: () => [stuff.memory, pos_out, norm_out],
         render: wrapFunc((time: number) =>
-            multiThread.gen_and_paint_height_field(retbuf, time)
+            multiThread.gen_and_paint_height_field(retbuf, time),
         ),
         setup: ({
             depth,
@@ -71,7 +71,7 @@ async function initHandlers() {
                 damping,
                 swell,
                 new Float32Array(windows),
-                retbuf
+                retbuf,
             ),
     });
 }
