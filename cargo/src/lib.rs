@@ -86,7 +86,7 @@ pub fn main() {
 
 #[wasm_bindgen]
 pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32], output: &mut RetBuf) {
-    let windows = <[f32; FILTER_COUNT]>::try_from(windows).unwrap();
+    let windows = <[f32; FILTER_COUNT*2]>::try_from(windows).unwrap();
 
     let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, &windows));
     wavefield.precompute_spectra(&mut output.wavebuffers);

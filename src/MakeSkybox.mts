@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import makeSkyboxVert from "./glsl/skybox.vert.glsl";
 import makeSkyboxFrag from "./glsl/skybox.frag.glsl";
-import { stripHeader } from "./GLUtils";
+import { stripHeader } from "./GLUtils.mjs";
 
 export default class MakeSkybox {
     static readonly skyboxOpts = {

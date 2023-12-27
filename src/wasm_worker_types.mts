@@ -17,7 +17,7 @@ export interface WorkerHandlers {
         fetch: number;
         damping: number;
         swell: number;
-        windows: [number, number, number];
+        windows: [number, number, number, number, number, number];
     }) => Promise<void>;
     render: (arg: {
         time: number;

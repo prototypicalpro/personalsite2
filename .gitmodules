@@ -1,3 +1,3 @@
-[submodule "lib/wasm-bindgen-rayon"]
-	path = lib/wasm-bindgen-rayon
+[submodule "cargo/lib/wasm-bindgen-rayon"]
+	path = cargo/lib/wasm-bindgen-rayon
 	url = https://github.com/RReverser/wasm-bindgen-rayon.git

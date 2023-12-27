@@ -1,6 +1,7 @@
 #version 300 es
 
-/// end-pre-strip ///
+// all code above this line removed at runtime
+#pragma end_pre_strip
 
 in vec3 position;
 in vec4 wavePosition;

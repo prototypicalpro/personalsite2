@@ -1,15 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import { stripHeader, makeRenderTarget } from "./GLUtils";
-import { WorkerHandlers } from "./wasm_worker_types";
+import { stripHeader, makeRenderTarget } from "./GLUtils.mjs";
+import { WorkerHandlers } from "./wasm_worker_types.mjs";
 import {
     WIDTH,
     PACKED_SIZE_BYTES,
     PACKED_SIZE_FLOATS,
     FILTER_COUNT,
     PACKED_SIZE,
-} from "./wasm_constants";
-import MakeTex from "./MakeTex";
+} from "./wasm_constants.mjs";
+import MakeTex from "./MakeTex.mjs";
 
 import raytraceVert from "./glsl/raytrace.vert.glsl";
 import raytraceFrag from "./glsl/raytrace.frag.glsl";
@@ -23,11 +23,18 @@ import im02 from "./img/skybox/im02.png";
 import im10 from "./img/skybox/im10.png";
 import im11 from "./img/skybox/im11.png";
 import im12 from "./img/skybox/im12.png";
-import MakeSkybox from "./MakeSkybox";
+import MakeSkybox from "./MakeSkybox.mjs";
 
 export default class View {
     static readonly waveProps = {
-        windows: [0.1, 1, 10] as [number, number, number],
+        windows: [0, 0.1, 0.1, 1, 1, 10] as [
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+        ],
         blending: [0.1, 0.5, 1],
         timeScale: 0.1,
         segments: 2048,
@@ -115,8 +122,8 @@ export default class View {
         this.scene.background = cubeTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
-            View.waveProps.windows[2],
-            View.waveProps.windows[2],
+            View.waveProps.windows[5],
+            View.waveProps.windows[5],
             View.waveProps.segments,
             View.waveProps.segments,
         );
@@ -181,8 +188,6 @@ export default class View {
             ),
         );
 
-        console.log(preinitVals);
-
         return {
             LEADR_SAMPLE_COUNT: LeadrSampleCount,
             LEADR_SAMPLE_SIZE: LeadrSampleSize.toPrecision(21),
@@ -194,7 +199,7 @@ export default class View {
         const { tiling_off, windows, blending } = View.waveProps;
         const waveTextureMatrix = [];
         for (let i = 0; i < FILTER_COUNT; i++) {
-            const child_domain = View.waveProps.windows[i];
+            const child_domain = View.waveProps.windows[i * 2 + 1];
 
             const mat = new THREE.Matrix3().setUvTransform(
                 0.5,
@@ -211,8 +216,8 @@ export default class View {
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
             0.5,
             0.5,
-            1 / windows[2],
-            1 / windows[2],
+            1 / windows[5],
+            1 / windows[5],
             0,
             0,
             0,
@@ -227,13 +232,13 @@ export default class View {
                 this.makeTex.getSecondMomentTexs(),
             ),
             waveTextureMatrix: new THREE.Uniform(waveTextureMatrix),
-            domain: new THREE.Uniform(View.waveProps.windows[2]),
+            domain: new THREE.Uniform(View.waveProps.windows[5]),
             floorPosition: new THREE.Uniform(
                 new THREE.Vector3(0, 0, -View.waveProps.depth),
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
             floorTexture: new THREE.Uniform(this.backTex),
-            floorSize: new THREE.Uniform(windows[2]),
+            floorSize: new THREE.Uniform(windows[5]),
             floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
             sunColor: new THREE.Uniform(new THREE.Vector3(1, 1, 1)),

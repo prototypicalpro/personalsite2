@@ -25,7 +25,7 @@ async function initHandlers() {
     // TODO: throw if no threads
     const hasThreads = await threads();
 
-    const multiThread = await import("../pkg/index");
+    const multiThread = await import("wasm-bindgen-rayon-demo");
 
     const stuff = await multiThread.default(
         undefined,

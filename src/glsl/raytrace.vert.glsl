@@ -12,7 +12,8 @@ in vec3 position; // (x, y, z) of render plane
 // patch for syntax highlighting
 #define UNROLLED_LOOP_INDEX 0
 
-/// end-pre-strip ///
+// all code above this line removed at runtime
+#pragma end_pre_strip
 
 #define FILTER_COUNT 3
 

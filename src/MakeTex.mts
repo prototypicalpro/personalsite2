@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { readMultipleRenderTargetPixels, stripHeader } from "./GLUtils";
-import { WIDTH, FILTER_COUNT } from "./wasm_constants";
+import { readMultipleRenderTargetPixels, stripHeader } from "./GLUtils.mjs";
+import { WIDTH, FILTER_COUNT } from "./wasm_constants.mjs";
 
 import makeTexVert from "./glsl/maketex.vert.glsl";
 import makeTexFrag from "./glsl/maketex.frag.glsl";
@@ -15,7 +15,7 @@ export default class MakeTex {
 
     constructor(
         posBufs: THREE.BufferAttribute[],
-        partBufs: THREE.BufferAttribute[]
+        partBufs: THREE.BufferAttribute[],
     ) {
         this.blankCamera = new THREE.Camera();
         this.blankCamera.position.z = 1;
@@ -44,7 +44,7 @@ export default class MakeTex {
             const newGeo = new THREE.BufferGeometry();
             newGeo.setAttribute(
                 "position",
-                new THREE.BufferAttribute(coords, 3)
+                new THREE.BufferAttribute(coords, 3),
             );
             newGeo.setAttribute(`wavePosition`, posBufs[i]);
             newGeo.setAttribute(`wavePartial`, partBufs[i]);
@@ -63,7 +63,7 @@ export default class MakeTex {
                     generateMipmaps: true,
                     wrapS: THREE.RepeatWrapping,
                     wrapT: THREE.RepeatWrapping,
-                })
+                }),
         );
     }
 

@@ -1,7 +1,8 @@
 #version 300 es
 #define UNROLLED_LOOP_INDEX 0
 
-/// end-pre-strip ///
+// all code above this line removed at runtime
+#pragma end_pre_strip
 
 precision highp float;
 

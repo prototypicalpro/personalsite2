@@ -10,5 +10,8 @@
     },
     "[json]": {
         "editor.defaultFormatter": "esbenp.prettier-vscode"
-    }
+    },
+    "rust-analyzer.linkedProjects": [
+        ".\\cargo\\Cargo.toml"
+    ]
 }

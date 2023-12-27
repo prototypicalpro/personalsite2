@@ -1,7 +1,7 @@
 import * as Comlink from "comlink";
 
-import { WorkerHandlersWrap } from "./wasm_worker_types";
-import View from "./View";
+import { WorkerHandlersWrap } from "./wasm_worker_types.mjs";
+import View from "./View.mjs";
 
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 // const ctx = canvas.getContext("2d");

@@ -4,7 +4,8 @@
 #define LEADR_SAMPLE_SIZE 1.
 #define LEADR_WEIGHTS vec4(0, 0, 0, 0)
 
-/// end-pre-strip ///
+// all code above this line removed at runtime
+#pragma end_pre_strip
 
 #define FILTER_COUNT 3
 

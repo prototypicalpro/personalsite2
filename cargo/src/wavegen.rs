@@ -142,7 +142,7 @@ impl WaveGen {
     /// * `fetch` - Large number (~800000)
     /// * `damping` - Wave damping from 1-6 (start with 3.3)
     /// * `swell` - Wave swell from 0 - 1
-    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32; FILTER_COUNT]) -> WaveGen {
+    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32; FILTER_COUNT*2]) -> WaveGen {
         let alpha = 0.076*(wind_speed.powi(2) / (GRAVITY*fetch)).abs().powf(0.22);
         let dimless_fetch = GRAVITY*fetch / wind_speed.powi(2);
         let omega_p = TAU*3.5*(GRAVITY / wind_speed)*dimless_fetch.powf(-0.33);
@@ -158,9 +158,9 @@ impl WaveGen {
             hassleman_raisefactor: hassleman_raise,
             horvath_swell: swell,
             filters: [
-                WaveWindow::new_sharp(0., windows[0]),
                 WaveWindow::new_sharp(windows[0], windows[1]),
-                WaveWindow::new_sharp(windows[1], windows[2])
+                WaveWindow::new_sharp(windows[2], windows[3]),
+                WaveWindow::new_sharp(windows[4], windows[5])
             ],
             rand_seed: thread_rng().next_u64(),
         }

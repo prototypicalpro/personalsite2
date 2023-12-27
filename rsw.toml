@@ -1,0 +1,6 @@
+cli = "npm"
+
+[[crates]]
+name = "cargo"
+target = "web"
+link = true
