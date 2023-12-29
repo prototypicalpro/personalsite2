@@ -16,7 +16,10 @@ import raytraceFrag from "./glsl/raytrace.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
 // import Tex from "./img/tex.jpg";
-import Tex from "./img/shapes.jpg";
+// import Tex from "./img/shapes.jpg";
+// import Tex from "./img/e.png";
+// import Tex from "./img/space.jpg";
+import Tex from "./img/stars.jpg";
 import im00 from "./img/skybox/im00.png";
 import im01 from "./img/skybox/im01.png";
 import im02 from "./img/skybox/im02.png";
@@ -39,6 +42,7 @@ export default class View {
         timeScale: 0.1,
         segments: 2048,
         depth: 10,
+        visualDepth: 2,
         wind_speed: 10,
         fetch: 1000000,
         damping: 3.3,
@@ -234,7 +238,7 @@ export default class View {
             waveTextureMatrix: new THREE.Uniform(waveTextureMatrix),
             domain: new THREE.Uniform(View.waveProps.windows[5]),
             floorPosition: new THREE.Uniform(
-                new THREE.Vector3(0, 0, -View.waveProps.depth),
+                new THREE.Vector3(0, 0, -View.waveProps.visualDepth),
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
             floorTexture: new THREE.Uniform(this.backTex),

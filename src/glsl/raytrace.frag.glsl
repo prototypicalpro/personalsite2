@@ -128,7 +128,7 @@ vec3 LEADRCheaper(vec3 worldPosition, vec3 wi, vec2 firstMoments, vec3 secMoment
     // return vec3(firstMoments, 1.);
 }
 
-vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float A) {
+vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float lodOffset) {
     const vec3 macronormal = vec3(0, 0, 1.);
     const float lodMin = 0.;
     const float lodBias = 0.;
@@ -138,11 +138,11 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float A) {
     vec3 wt = refract(wi, wn, ETA);
     float eta_wtwn = INV_ETA*dot(wt, wn);
     float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
-    float alpha = J*A;
 
     float d = linePlaneDistance(v_position, wt, floorPosition, floorNormal);
-    float solidFootprint = alpha*pow(d*floorToPixels, 2.) / abs(dot(wn, wt));
-    float lod = max(lodMin, lodBias + log2(solidFootprint)); // TODO: remove LOD clamp?
+    // float solidFootprint = pow(d*floorToPixels, 2.) / abs(dot(wn, wt));
+    float lod = 0.72 * log(max(0.0001, J * (0.5 / 1.5))) + lodOffset + lodBias;
+    // float lod = max(lodMin, lodBias + log2(solidFootprint)); // TODO: remove LOD clamp?
 
     vec3 floorIntersect = v_position + d*wt;
     vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
@@ -194,8 +194,11 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, fl
         float proj = max(0., dot(wn, -wi)) / wn.z;
         float f = 1. - fresnel(-wi, wn, secMoments);
 
-        vec3 tex = sampleReflectLEADR(wi, wn, lodOffset);
-        I += Wn*proj*tex*f;
+        vec3 rtex = sampleReflectLEADR(wi, wn, lodOffset);
+        // vec3 ftex = sampleRefractLEADR(wi, wn, lodOffset);
+        // vec3 tex = rtex + 0.7*ftex;
+
+        I += Wn*proj*rtex*f;
         S += Wn*proj;
     }
 
