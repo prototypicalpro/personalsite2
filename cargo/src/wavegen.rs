@@ -1,13 +1,14 @@
-use std::{f32::consts::{PI, TAU}, mem::align_of, mem::size_of};
+use std::{f32::consts::{PI, TAU}, mem::{align_of, MaybeUninit}, mem::size_of};
 use itertools::{Itertools};
 use rand::prelude::*;
 use rayon::{prelude::*};
 use rand_distr::{Normal, Uniform, num_traits::Zero};
 use rayon::iter::{IntoParallelIterator};
-use arrayvec::ArrayVec;
 use num_complex::Complex32;
 use strided::{Stride, MutStride, Strided, MutStrided};
-use crate::{gamma, const_twid};
+use std::arch::wasm32::*;
+use crate::{gamma, const_twid, simd::{mul_complex_f32, splat_complex}};
+use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
 
 const GRAVITY: f32 = 9.807;
 pub const WIDTH: usize = 256;
@@ -16,6 +17,7 @@ const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
 pub const SIZE: usize = WIDTH*WIDTH;
 pub const FILTER_COUNT: usize = 3;
 pub const FACTOR_COUNT: usize = 8;
+pub const HALF_FACTOR_COUNT: usize = FACTOR_COUNT / 2;
 
 #[derive(Debug, Clone, Default, Copy)]
 pub struct WavePoint {
@@ -91,8 +93,8 @@ impl WaveWindow {
 pub struct WaveBuffers {
     static_spectra: Box<[WavePoint; HALF_SIZE]>,
     timevaried_spectra: Box<[Complex32; HALF_SIZE]>,
-    factors: [Box<[Complex32; HALF_SIZE]>; 8],
-    fft_scratch: [Box<[Complex32; HALF_SIZE]>; 8],
+    factors: [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT],
+    fft_scratch: [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT],
 }
 
 impl Default for WaveBuffers {
@@ -100,8 +102,8 @@ impl Default for WaveBuffers {
         WaveBuffers { 
             static_spectra: Box::new([Default::default(); HALF_SIZE]),
             timevaried_spectra: Box::new([Default::default(); HALF_SIZE]),
-            factors: [(); FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
-            fft_scratch: [(); FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
+            factors: [(); HALF_FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
+            fft_scratch: [(); HALF_FACTOR_COUNT].map(|_| Box::new([Default::default(); HALF_SIZE])),
         }
     }
 }
@@ -130,7 +132,7 @@ pub enum OceanProp {
     DZY = 7
 }
 
-pub type WaveGenOutput = [[Box<[f32; SIZE]>; FACTOR_COUNT]; FILTER_COUNT];
+pub type WaveGenOutput = [[Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT]; FILTER_COUNT];
 
 impl WaveGen {
     /// Create a ocean wave simulation using some parameters
@@ -171,7 +173,7 @@ impl WaveGen {
     }
 
     pub fn make_output_buffer() -> WaveGenOutput {
-        [(); FILTER_COUNT].map(|_| [(); FACTOR_COUNT].map(|_| Box::new([0.0; SIZE])))
+        [(); FILTER_COUNT].map(|_| [(); HALF_FACTOR_COUNT].map(|_| Box::new([0_f32; SIZE*f32::COMPLEX_PER_VECTOR])))
     }
 
     pub fn make_wavebuffers() -> [WaveBuffers; FILTER_COUNT] {
@@ -316,112 +318,143 @@ impl WaveGen {
             .for_each(|(res, elem)| *elem = res);
     }
 
-    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, domain: f32, dk: f32, out_buffer: &mut [Box<[Complex32; HALF_SIZE]>; 8]) {
-        [OceanProp::HEIGHT, OceanProp::DX, OceanProp::DY, OceanProp::DXY, OceanProp::DXX, OceanProp::DYY, OceanProp::DZX, OceanProp::DZY]
+    fn get_factor_func(p: &OceanProp) -> fn(&Complex32, f32, f32, f32) -> Complex32 {
+        match p {
+            OceanProp::HEIGHT =>|h, kx, ky, k_mag| h.clone(),
+            OceanProp::DX =>    |h, kx, ky, k_mag| *h*Complex32::new(0.0, -kx/k_mag),
+            OceanProp::DY =>    |h, kx, ky, k_mag| *h*Complex32::new(0.0, -ky/k_mag),
+            OceanProp::DXY =>   |h, kx, ky, k_mag| -*h*Complex32::new(kx*ky/k_mag, 0.0),
+            OceanProp::DXX =>   |h, kx, ky, k_mag| -*h*Complex32::new(kx.powi(2)/k_mag, 0.0),
+            OceanProp::DYY =>   |h, kx, ky, k_mag| -*h*Complex32::new(ky.powi(2)/k_mag, 0.0),
+            OceanProp::DZX =>   |h, kx, ky, k_mag| *h*Complex32::new(0.0, kx),
+            OceanProp::DZY =>   |h, kx, ky, k_mag| *h*Complex32::new(0.0, ky),
+        }
+    }
+
+    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, domain: f32, dk: f32, out_buffer: &mut [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT]) {
+        [[OceanProp::HEIGHT, OceanProp::DX], [OceanProp::DY, OceanProp::DXY], [OceanProp::DXX, OceanProp::DYY], [OceanProp::DZX, OceanProp::DZY]]
             .par_iter()
             .zip_eq(out_buffer)
             .for_each(|(p, buf)| {
-                let mapfunc: fn((&Complex32, ((f32, f32), f32))) -> Complex32 = match p {
-                    OceanProp::HEIGHT => |(h, _)| h.clone(),
-                    OceanProp::DX =>    |(h, ((kx, _), k_mag))| *h*Complex32::new(0.0, -kx/k_mag),
-                    OceanProp::DY =>    |(h, ((_, ky), k_mag))| *h*Complex32::new(0.0, -ky/k_mag),
-                    OceanProp::DXY =>   |(h, ((kx, ky), k_mag))| -*h*Complex32::new(kx*ky/k_mag, 0.0),
-                    OceanProp::DXX =>   |(h, ((kx, _), k_mag))| -*h*Complex32::new(kx.powi(2)/k_mag, 0.0),
-                    OceanProp::DYY =>   |(h, ((_, ky), k_mag))| -*h*Complex32::new(ky.powi(2)/k_mag, 0.0),
-                    OceanProp::DZX =>   |(h, ((kx, _), _))| *h*Complex32::new(0.0, kx),
-                    OceanProp::DZY =>   |(h, ((_, ky), _))| *h*Complex32::new(0.0, ky),
-                };
+                let mapfunc0 = Self::get_factor_func(&p[0]);
+                let mapfunc1 = Self::get_factor_func(&p[1]);
 
                 timevaried
                     .par_iter()
                     .zip_eq(self.par_spectral_iterator(domain))
-                    .map(|(h, ((kx, ky), k_mag, _))| 
-                        if k_mag != 0.0 { mapfunc((&h, ((kx, ky), k_mag))) } else { Complex32::zero() })
+                    .map(|(h, ((kx, ky), k_mag, _))| {
+                        if k_mag != 0.0 
+                        { 
+                            [mapfunc0(&h, kx, ky, k_mag), mapfunc1(&h, kx, ky, k_mag)]
+                        } else { 
+                            [Complex32::zero(), Complex32::zero()]
+                        }
+                    })
                     .zip_eq(buf.par_iter_mut())
                     .for_each(|(res, elem)| *elem = res);
             });
     }
 
-    fn complex_to_packed_input(input: &mut [Complex32]) {
+    unsafe fn complex_to_packed_input(input: &mut [[Complex32; 2]]) {
         // Xe[k] = 0.5(X[k] + X*[N/2-k])
         // Xo[k] = 0.5(X[k] + X*[N/2-k]e^(j2pik/N))
         // Z[k] = Xe[k] + jXo[k]
       
         // first and last imaginary MUST be zero
-        input[0].im = 0.0;
+        input[0][0].im = 0.0;
+        input[0][1].im = 0.0;
         // input[input.len() - 1].im = 0.0;
       
         let (lhs, rhs) = input.split_at_mut(input.len() / 2);
       
-        for (i, (left, rev_right)) in lhs.iter_mut().zip(rhs.iter_mut().rev()).enumerate() {
-          let twiddle = const_twid::lookup_twiddle(i, WIDTH / 2);
-          // assert!((twiddle - Complex32::from_polar(1.0, std::f32::consts::TAU * (i as f32 / N as f32))).re < 0.0001);
-          
-          let sum = *left + *rev_right;
-          let diff = *left - *rev_right;
-      
-          // Apply twiddle factors. Theoretically we'd have to load 2 separate twiddle factors here, one for the beginning
-          // and one for the end. But the twiddle factor for the end is just the twiddle for the beginning, with the
-          // real part negated. Since it's the same twiddle, we can factor out a ton of math ops and cut the number of
-          // multiplications in half.
-          let twiddled_re_sum = sum * twiddle.re;
-          let twiddled_im_sum = sum * twiddle.im;
-          let twiddled_re_diff = diff * twiddle.re;
-          let twiddled_im_diff = diff * twiddle.im;
-      
-          let output_twiddled_real = twiddled_re_sum.im + twiddled_im_diff.re;
-          let output_twiddled_im = twiddled_im_sum.im - twiddled_re_diff.re;
-      
-          // We finally have all the data we need to write our preprocessed data back where we got it from.
-          *left = Complex32::new(
-              sum.re - output_twiddled_real,
-              diff.im - output_twiddled_im,
-          );
-          *rev_right = Complex32::new(
-              sum.re + output_twiddled_real,
-              -output_twiddled_im - diff.im,
-          );
+        for (i, (mut left, mut rev_right)) in lhs.iter_mut().zip(rhs.iter_mut().rev()).enumerate() {
+            // s = x + xr
+            // d = x - xr
+            // st = s.i*t = (x.i + xr.i)*t.ri
+            // mt = (d.r*)*t.ir
+            // ot = st + mt 
+            // left = (s.re, d.i) - ot
+            // right = ((s.re, d.i) + ot)*
+            
+            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, WIDTH / 2));
+            let real_conj = f32x4(-0., 0., -0., 0.);
+            let conj = f32x4(0., -0., 0., -0.);
+            // assert!((twiddle - Complex32::from_polar(1.0, std::f32::consts::TAU * (i as f32 / N as f32))).re < 0.0001);
+            
+            let vl = left.load_complex(0);
+            let vr = rev_right.load_complex(0);
+            let sd = f32x4_add(vl,  v128_xor(vr, real_conj)); // difference in real, sum in imag
+
+            let si = u32x4_shuffle::<1, 1, 3, 3>(sd, sd);
+            let dr = u32x4_shuffle::<0, 0, 2, 2>(sd, sd);
+
+            let st = f32x4_mul(si, twiddle);
+            let twidrev = u32x4_shuffle::<1, 0, 3, 2>(twiddle, twiddle);
+            let mt = f32x4_mul(v128_xor(dr, conj), twidrev);
+            let ot = f32x4_add(st, mt);
+
+            let sd_2 = f32x4_add(vl,  v128_xor(vr, conj)); // sum in real, difference in imag
+            let leftvec = f32x4_sub(sd_2, ot);
+            let rightvec = v128_xor(f32x4_add(sd_2, ot), conj);
+            
+            left.store_complex(leftvec, 0);
+            rev_right.store_complex(rightvec, 0);
         }
       
         // center element
-        input[input.len() / 2] = 2.0*input[input.len() / 2].conj();
+        input[input.len() / 2][0] = 2.0*input[input.len() / 2][0].conj();
+        input[input.len() / 2][1] = 2.0*input[input.len() / 2][1].conj();
       
         // note: last element in each row is padding
-        input[input.len() - 1] = Complex32::new(0.0, 0.0);
+        input[input.len() - 1] = [Complex32::new(0.0, 0.0); 2];
       
     }
 
     /// Writes the forward DFT of `input` to `output`.
-    fn fft_c2c(input: Stride<Complex32>, mut output: MutStride<Complex32>) {
+    unsafe fn fft_c2c_2x(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
         const J: Complex32 = Complex32::new(0.0, 1.0);
         // check it's a power of two.
         assert!(WIDTH / 2 == const_twid::TWIDDLE_LOOKUP.len());
         assert!(input.len() == output.len() && input.len().count_ones() == 1, "input_stride = {}, output_stride = {}", input.len(), output.len());
-        // web_sys::console::log_1(&input.len().to_string().into());
 
         // break early for a four point butterfly
         // log_stride(&input_stride);
         if input.len() == 4 {
-            let m: [Complex32; 4] = [input[0], input[1], input[2], input[3]];
+            let m0 = (&input[0]).load_complex(0);
+            let m1 = (&input[1]).load_complex(0);
+            let m2 = (&input[2]).load_complex(0);
+            let m3 = (&input[3]).load_complex(0);
         
-            let (m1_j, m3_j) = (J*m[1], J*m[3]);
-            output[0] = m[0] + m[1] + m[2] + m[3];
-            output[1] = m[0] + m1_j - m[2] - m3_j;
-            output[2] = m[0] - m[1] + m[2] - m[3];
-            output[3] = m[0] - m1_j - m[2] + m3_j;
+            let mask = u32x4(0, u32::MAX, 0, u32::MAX);
+            let m1_j = v128_and(m1, mask);
+            let m3_j = v128_and(m3, mask);
+            let o0 = f32x4_add(f32x4_add(m0, m1), f32x4_add(m2, m3));
+            let o1 = f32x4_sub(f32x4_add(m0, m1_j), f32x4_sub(m2, m3_j));
+            let o2 = f32x4_add(f32x4_sub(m0, m1),  f32x4_sub(m2, m3));
+            let o3 = f32x4_sub(f32x4_sub(m0, m1_j), f32x4_add(m2, m3_j));
+        
+            (&mut output[0]).store_complex(o0, 0);
+            (&mut output[1]).store_complex(o1, 0);
+            (&mut output[2]).store_complex(o2, 0);
+            (&mut output[3]).store_complex(o3, 0);
+
+            // output[0] = m[0] + m[1] + m[2] + m[3];
+            // output[1] = m[0] + m1_j - m[2] - m3_j;
+            // output[2] = m[0] - m[1] + m[2] - m[3];
+            // output[3] = m[0] - m1_j - m[2] + m3_j;
             return;
         }
 
         // split the input into two arrays of alternating elements ("decimate in time")
         let (evens, odds) = input.substrides2();
         // break the output into two halves (front and back, not alternating)
-        let (mut start, mut end) = output.split_at_mut(input.len() / 2);
+        let (start, end) = output.split_at_mut(input.len() / 2);
         let half_len = start.len();
 
         // recursively perform two FFTs on alternating elements of the input, writing the
         // results into the first and second half of the output array respectively.
-        Self::fft_c2c(evens, start.reborrow());
-        Self::fft_c2c(odds, end.reborrow());
+        Self::fft_c2c_2x(evens, start);
+        Self::fft_c2c_2x(odds, end);
 
         // combine the subFFTs with the relations:
         //   X_k       = E_k + exp(-2πki/N) * O_k
@@ -429,51 +462,89 @@ impl WaveGen {
     
         // let twiddle = Complex32::from_polar(1.0, (-2.0 * std::f32::consts::PI / input.len() as f32));
         // let mut factor = Complex32::new(1., 0.);
-        for (i, (even, odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
-            let twiddle = const_twid::lookup_twiddle(i, half_len);
+        for (i, (mut even, mut odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
+            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_len));
             // assert!((Complex32::from_polar(1.0, std::f32::consts::TAU * (i as f32 / input.len() as f32)) - twiddle).re < 0.0001);
-            let e = *even;
-            let o = *odd;
-            let odd_twiddle = o*twiddle;
+            let e = even.load_complex(0);
+            let o = odd.load_complex(0);
+            let odd_twiddle = mul_complex_f32(o, twiddle);
     
-            *even = e + odd_twiddle;
-            *odd = e - odd_twiddle;
+            let eo = f32x4_add(e, odd_twiddle);
+            let oo = f32x4_sub(e,  odd_twiddle);
+
+            even.store_complex(eo, 0);
+            odd.store_complex(oo, 0);
         }
     }
 
-    fn compute_fft_2d(input_unpacked: &Box<[Complex32; HALF_SIZE]>, scratch_buffer: &mut Box<[Complex32; HALF_SIZE]>, output_buffer: &mut Box<[f32; SIZE]>) {
+    fn transpose_rows_to_cols<T: Copy>(matrix: &mut [T; HALF_SIZE]) {  
+        // derived from https://athemathmo.github.io/2016/08/29/inplace-transpose.html      
+        let mut tmp: [T; WIDTH] = unsafe {
+            MaybeUninit::uninit().assume_init()
+        };
+
+        let n = WIDTH;
+        let m = HALF_WIDTH;
+
+        // Permute the rows
+        for i in 0..m {
+            for j in 0..n {
+                let scatter_row_idx = (i % m + j*m) % n;
+                tmp[scatter_row_idx] = matrix[i*WIDTH + j];
+            }
+
+            for j in 0..WIDTH {
+                matrix[i*WIDTH + j] = tmp[j];
+            }
+        }
+
+        // Permute the columns
+        for j in 0..n {
+            for i in 0..m {
+                let gather_shuffle_row = (j + i*n) % m;
+                tmp[i] = matrix[WIDTH*gather_shuffle_row + j];
+            }
+
+            for i in 0..m {
+                matrix[i*WIDTH + j] = tmp[i];
+            }
+        }
+    }
+
+    fn compute_fft_2d_2x(input_unpacked: &Box<[[Complex32; 2]; HALF_SIZE]>, scratch_buffer: &mut Box<[[Complex32; 2]; HALF_SIZE]>, output_buffer: &mut Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>) {
          // input_unpacked: N*(N/2+1) (transposed)
         // output_packed:  (N/2+1)*N
         assert!(align_of::<Complex32>() == 4);
         assert!(size_of::<Complex32>() == 8);
 
         {
-            let mut output_strides: ArrayVec<_, WIDTH> = scratch_buffer
-                .as_stride_mut()
-                .substrides_mut(HALF_WIDTH)
-                .collect();
-
-            // pass 1: N/2+1 FFTs which move rows of N -> columns of N
+            // pass 1: N/2+1 FFTs which move rows of N -> rows of N
             input_unpacked
                 .par_chunks_exact(WIDTH)
-                .zip_eq(output_strides.par_iter_mut())
-                .for_each(|(input_row, output_col)|
-                    Self::fft_c2c(input_row.as_stride(), output_col.reborrow()));
+                .zip_eq(scratch_buffer[0..HALF_SIZE].par_chunks_exact_mut(WIDTH))
+                .for_each(|(input_row, output_row)|
+                    unsafe { Self::fft_c2c_2x(input_row.as_stride(), output_row) });
+
+            // Transpose rows of N -> columns of N
+            Self::transpose_rows_to_cols(scratch_buffer);
         }
 
-        // pass 2: N DFTS which move rows of N/2+1 -> rows of N real
-        let (_, output_as_cmplx, _) = unsafe { output_buffer.align_to_mut::<Complex32>() };
+        // pass 2: N FFTs which move rows of N/2+1 -> rows of N real
+        // TODO: transmute into array instead of slice
+        let (_, output_as_cmplx, _) = unsafe { output_buffer.align_to_mut::<[Complex32; 2]>() };
         assert!(output_as_cmplx.len() == SIZE/2);
 
         {   
-            scratch_buffer
+            scratch_buffer[0..HALF_SIZE]
                 .par_chunks_exact_mut(HALF_WIDTH)
                 .zip_eq(output_as_cmplx.par_chunks_exact_mut(WIDTH/2))
-                .for_each(|(input_row, output_col)| {
-                    // pack complex into N/2 DFT
-                    Self::complex_to_packed_input(input_row);
-                    // drop last sample 257 -> 256
-                    Self::fft_c2c(input_row[0..input_row.len() - 1].as_stride(), output_col.as_stride_mut());
+                .for_each(|(input_row, output_row)| {
+                    unsafe {
+                        // add conjugated signal to itself so F(i) = (x[0], x[1]), (x[2], x[3]) 
+                        Self::complex_to_packed_input(input_row);
+                        // drop last sample 257 -> 256
+                        Self::fft_c2c_2x(input_row[0..input_row.len() - 1].as_stride(), output_row);
+                    }
                 });
         }
     }
@@ -486,7 +557,7 @@ impl WaveGen {
                 self.compute_spectra(&filter, &mut wavebuf.static_spectra))
     }
 
-    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE]>; FACTOR_COUNT]) {
+    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
         self.compute_factors(&wavebuf.timevaried_spectra, filter.get_domain(), filter.get_dk(), &mut wavebuf.factors);
         wavebuf.factors
@@ -494,7 +565,7 @@ impl WaveGen {
             .zip_eq(wavebuf.fft_scratch.par_iter_mut())
             .zip_eq(output_buffer.par_iter_mut())
             .for_each(|((fac, scratch), out)| 
-                Self::compute_fft_2d(&fac, scratch, out));
+                Self::compute_fft_2d_2x(&fac, scratch, out));
     }
 
     pub fn step(&self, time: f32, wavebuffers: &mut [WaveBuffers; FILTER_COUNT], output_buffer: &mut WaveGenOutput) {

@@ -16,12 +16,13 @@ mod const_twid;
 mod tuples_exact;
 mod wavegen;
 mod gamma;
-mod cmplx;
+mod simd;
 mod product_exact;
 mod collect_into_arrayvec;
 mod util;
 
-use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers};
+use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers, HALF_FACTOR_COUNT};
+use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
 
 // #[global_allocator]
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
@@ -93,24 +94,27 @@ pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swel
     output.field = Some(wavefield);
 }
 
-fn pack_result(fft_out: &[Box<[f32; SIZE]>; FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
-    izip!(
-        fft_out[OceanProp::HEIGHT as usize].iter(), 
-        fft_out[OceanProp::DX as usize].iter(), 
-        fft_out[OceanProp::DY as usize].iter(), 
-        fft_out[OceanProp::DXY as usize].iter())
-        .flat_map(|(h, x, y, xy)| [x.clone(), y.clone(), h.clone(), xy.clone()])
-        .zip_eq(pos_out.iter_mut())
-        .for_each(|(res, elem)| *elem = res);
+fn pack_result(fft_out: &[Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
+    for i in 0..SIZE {
+        let (h, dx) = (fft_out[0][i*2], fft_out[0][i*2 + 1]);
+        let (dy, dxy) = (fft_out[1][i*2], fft_out[1][i*2 + 1]);
 
-    izip!(
-        fft_out[OceanProp::DXX as usize].iter(), 
-        fft_out[OceanProp::DYY as usize].iter(),
-        fft_out[OceanProp::DZX as usize].iter(), 
-        fft_out[OceanProp::DZY as usize].iter())
-        .flat_map(|(dxx, dyy, dzx, dzy)| [dxx.clone(), dyy.clone(), dzx.clone(), dzy.clone()])
-        .zip_eq(partial_out.iter_mut())
-        .for_each(|(res, elem)| *elem = res);
+        pos_out[i*4] = h;
+        pos_out[i*4 + 1] = dx;
+        pos_out[i*4 + 2] = dy;
+        pos_out[i*4 + 3] = dxy;
+    }
+
+
+    for i in 0..SIZE {
+        let (dxx, dyy) = (fft_out[2][i*2], fft_out[2][i*2 + 1]);
+        let (dzx, dzy) = (fft_out[3][i*2], fft_out[3][i*2 + 1]);
+
+        partial_out[i*4] = dxx;
+        partial_out[i*4 + 1] = dyy;
+        partial_out[i*4 + 2] = dzx;
+        partial_out[i*4 + 3] = dzy;
+    }
 }
 
 #[wasm_bindgen]
