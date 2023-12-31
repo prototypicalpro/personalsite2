@@ -1,9 +1,9 @@
 use std::{f32::consts::{PI, TAU}, mem::{align_of, MaybeUninit}, mem::size_of};
 use itertools::{Itertools};
 use rand::prelude::*;
-use rayon::{prelude::*};
+// use rayon::{prelude::*};
 use rand_distr::{Normal, Uniform, num_traits::Zero};
-use rayon::iter::{IntoParallelIterator};
+// use rayon::iter::{IntoParallelIterator};
 use num_complex::Complex32;
 use strided::{Stride, MutStride, Strided, MutStrided};
 use std::arch::wasm32::*;
@@ -122,9 +122,9 @@ pub struct WaveGen {
 }
 
 pub enum OceanProp {
-    HEIGHT = 0,
-    DX = 1,
-    DY = 2,
+    DX = 0,
+    DY = 1,
+    HEIGHT = 2,
     DXY = 3,
     DXX = 4,
     DYY = 5,
@@ -279,9 +279,9 @@ impl WaveGen {
         WavePoint { pos_spec: pos_cmplx, neg_spec: neg_cmplx, omega: omega }
     }
 
-    fn par_spectral_iterator(&self, domain: f32) -> impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_ {
+    fn spectral_iterator(&self, domain: f32) -> impl ExactSizeIterator<Item=((f32, f32), f32, usize)> + '_ { // impl rayon::iter::IndexedParallelIterator<Item = ((f32, f32), f32, usize)> + '_
         (0..HALF_SIZE)
-            .into_par_iter()
+            .into_iter()
             .map(move |i| {
                 // NOTE: outputs are transposed
                 let x = i / WIDTH;
@@ -296,16 +296,16 @@ impl WaveGen {
     fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; HALF_SIZE]>) {     
         let dk = filter.get_dk();   
         let domain = filter.get_domain();
-        self.par_spectral_iterator(domain)
+        self.spectral_iterator(domain)
             .map(|((x, y), k_mag, i)| (k_mag, ((-y).atan2(x), y.atan2(-x)), filter.run(k_mag), i))
             .map(|(k_mag, theta, filter, i)| self.compute_spectra_impl(dk, k_mag, theta, filter, i))
-            .zip_eq(buffer.par_iter_mut())
+            .zip_eq(buffer.iter_mut())
             .for_each(|(res, elem)| *elem = res);
     }
 
     fn compute_timevaried(&self, time: f32, in_buffer: &Box<[WavePoint; HALF_SIZE]>, out_buffer: &mut Box<[Complex32; HALF_SIZE]>) {
         in_buffer
-            .par_iter()
+            .iter()
             // apply time variation
             .map(|w| {
                 let omega_t = w.omega * time;
@@ -314,15 +314,15 @@ impl WaveGen {
                 
                 w.pos_spec*fwd + w.neg_spec*bkwd
             })
-            .zip_eq(out_buffer.par_iter_mut())
+            .zip_eq(out_buffer.iter_mut())
             .for_each(|(res, elem)| *elem = res);
     }
 
     fn get_factor_func(p: &OceanProp) -> fn(&Complex32, f32, f32, f32) -> Complex32 {
         match p {
-            OceanProp::HEIGHT =>|h, kx, ky, k_mag| h.clone(),
             OceanProp::DX =>    |h, kx, ky, k_mag| *h*Complex32::new(0.0, -kx/k_mag),
             OceanProp::DY =>    |h, kx, ky, k_mag| *h*Complex32::new(0.0, -ky/k_mag),
+            OceanProp::HEIGHT =>|h, kx, ky, k_mag| h.clone(),
             OceanProp::DXY =>   |h, kx, ky, k_mag| -*h*Complex32::new(kx*ky/k_mag, 0.0),
             OceanProp::DXX =>   |h, kx, ky, k_mag| -*h*Complex32::new(kx.powi(2)/k_mag, 0.0),
             OceanProp::DYY =>   |h, kx, ky, k_mag| -*h*Complex32::new(ky.powi(2)/k_mag, 0.0),
@@ -332,16 +332,16 @@ impl WaveGen {
     }
 
     fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, domain: f32, dk: f32, out_buffer: &mut [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT]) {
-        [[OceanProp::HEIGHT, OceanProp::DX], [OceanProp::DY, OceanProp::DXY], [OceanProp::DXX, OceanProp::DYY], [OceanProp::DZX, OceanProp::DZY]]
-            .par_iter()
+        [[OceanProp::DX, OceanProp::DY], [OceanProp::HEIGHT, OceanProp::DXY], [OceanProp::DXX, OceanProp::DYY], [OceanProp::DZX, OceanProp::DZY]]
+            .iter() // par_iter
             .zip_eq(out_buffer)
             .for_each(|(p, buf)| {
                 let mapfunc0 = Self::get_factor_func(&p[0]);
                 let mapfunc1 = Self::get_factor_func(&p[1]);
 
                 timevaried
-                    .par_iter()
-                    .zip_eq(self.par_spectral_iterator(domain))
+                    .iter()
+                    .zip_eq(self.spectral_iterator(domain))
                     .map(|(h, ((kx, ky), k_mag, _))| {
                         if k_mag != 0.0 
                         { 
@@ -350,7 +350,7 @@ impl WaveGen {
                             [Complex32::zero(), Complex32::zero()]
                         }
                     })
-                    .zip_eq(buf.par_iter_mut())
+                    .zip_eq(buf.iter_mut())
                     .for_each(|(res, elem)| *elem = res);
             });
     }
@@ -379,7 +379,6 @@ impl WaveGen {
             let twiddle = splat_complex(&const_twid::lookup_twiddle(i, WIDTH / 2));
             let real_conj = f32x4(-0., 0., -0., 0.);
             let conj = f32x4(0., -0., 0., -0.);
-            // assert!((twiddle - Complex32::from_polar(1.0, std::f32::consts::TAU * (i as f32 / N as f32))).re < 0.0001);
             
             let vl = left.load_complex(0);
             let vr = rev_right.load_complex(0);
@@ -396,7 +395,7 @@ impl WaveGen {
             let sd_2 = f32x4_add(vl,  v128_xor(vr, conj)); // sum in real, difference in imag
             let leftvec = f32x4_sub(sd_2, ot);
             let rightvec = v128_xor(f32x4_add(sd_2, ot), conj);
-            
+
             left.store_complex(leftvec, 0);
             rev_right.store_complex(rightvec, 0);
         }
@@ -412,10 +411,10 @@ impl WaveGen {
 
     /// Writes the forward DFT of `input` to `output`.
     unsafe fn fft_c2c_2x(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
-        const J: Complex32 = Complex32::new(0.0, 1.0);
         // check it's a power of two.
-        assert!(WIDTH / 2 == const_twid::TWIDDLE_LOOKUP.len());
-        assert!(input.len() == output.len() && input.len().count_ones() == 1, "input_stride = {}, output_stride = {}", input.len(), output.len());
+        // assert!(WIDTH / 2 == const_twid::TWIDDLE_LOOKUP.len());
+        // assert!(input.len() == output.len() && input.len().count_ones() == 1, "input_stride = {}, output_stride = {}", input.len(), output.len());
+        // assert!(u32::MAX.count_ones() == 32);
 
         // break early for a four point butterfly
         // log_stride(&input_stride);
@@ -425,13 +424,16 @@ impl WaveGen {
             let m2 = (&input[2]).load_complex(0);
             let m3 = (&input[3]).load_complex(0);
         
-            let mask = u32x4(0, u32::MAX, 0, u32::MAX);
-            let m1_j = v128_and(m1, mask);
-            let m3_j = v128_and(m3, mask);
+            let conj = f32x4(0., -0., 0., -0.);
+            let m1conj = v128_xor(m1, conj);
+            let m1_j = u32x4_shuffle::<1, 0, 3, 2>(m1conj, m1conj);
+            let m3conj = v128_xor(m3, conj); 
+            let m3_j = u32x4_shuffle::<1, 0, 3, 2>(m3conj, m3conj);
+
             let o0 = f32x4_add(f32x4_add(m0, m1), f32x4_add(m2, m3));
-            let o1 = f32x4_sub(f32x4_add(m0, m1_j), f32x4_sub(m2, m3_j));
+            let o1 = f32x4_sub(f32x4_add(m0, m1_j), f32x4_add(m2, m3_j));
             let o2 = f32x4_add(f32x4_sub(m0, m1),  f32x4_sub(m2, m3));
-            let o3 = f32x4_sub(f32x4_sub(m0, m1_j), f32x4_add(m2, m3_j));
+            let o3 = f32x4_sub(f32x4_sub(m0, m1_j), f32x4_sub(m2, m3_j));
         
             (&mut output[0]).store_complex(o0, 0);
             (&mut output[1]).store_complex(o1, 0);
@@ -461,7 +463,6 @@ impl WaveGen {
         //   X_{k+N/2} = E_k - exp(-2πki/N) * O_k
     
         // let twiddle = Complex32::from_polar(1.0, (-2.0 * std::f32::consts::PI / input.len() as f32));
-        // let mut factor = Complex32::new(1., 0.);
         for (i, (mut even, mut odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
             let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_len));
             // assert!((Complex32::from_polar(1.0, std::f32::consts::TAU * (i as f32 / input.len() as f32)) - twiddle).re < 0.0001);
@@ -477,7 +478,7 @@ impl WaveGen {
         }
     }
 
-    fn transpose_rows_to_cols<T: Copy>(matrix: &mut [T; HALF_SIZE]) {  
+    fn transpose_rows_to_cols_in_place<T: Copy>(matrix: &mut [T; HALF_SIZE]) {  
         // derived from https://athemathmo.github.io/2016/08/29/inplace-transpose.html      
         let mut tmp: [T; WIDTH] = unsafe {
             MaybeUninit::uninit().assume_init()
@@ -511,7 +512,24 @@ impl WaveGen {
         }
     }
 
-    fn compute_fft_2d_2x(input_unpacked: &Box<[[Complex32; 2]; HALF_SIZE]>, scratch_buffer: &mut Box<[[Complex32; 2]; HALF_SIZE]>, output_buffer: &mut Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>) {
+    fn transpose_rows_to_cols<T: Copy>(matrix: &[T; HALF_SIZE], out: &mut [T; HALF_SIZE]) {
+        const BLOCK_SIZE: usize = 32;
+
+        for i in (0..HALF_WIDTH).step_by(BLOCK_SIZE) {
+            for j in (0..WIDTH).step_by(BLOCK_SIZE) {
+                // transpose the block beginning at [i,j]
+                for r in i..std::cmp::min(i + BLOCK_SIZE, HALF_WIDTH) {
+                    for c in j..j + BLOCK_SIZE {
+                        unsafe {
+                            *out.get_unchecked_mut(r + c*HALF_WIDTH) = matrix.get_unchecked(c + r*WIDTH).clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn compute_fft_2d_2x(input_unpacked: &mut Box<[[Complex32; 2]; HALF_SIZE]>, scratch_buffer: &mut Box<[[Complex32; 2]; HALF_SIZE]>, output_buffer: &mut Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>) {
          // input_unpacked: N*(N/2+1) (transposed)
         // output_packed:  (N/2+1)*N
         assert!(align_of::<Complex32>() == 4);
@@ -520,13 +538,13 @@ impl WaveGen {
         {
             // pass 1: N/2+1 FFTs which move rows of N -> rows of N
             input_unpacked
-                .par_chunks_exact(WIDTH)
-                .zip_eq(scratch_buffer[0..HALF_SIZE].par_chunks_exact_mut(WIDTH))
+                .chunks_exact(WIDTH)
+                .zip_eq(scratch_buffer.chunks_exact_mut(WIDTH))
                 .for_each(|(input_row, output_row)|
                     unsafe { Self::fft_c2c_2x(input_row.as_stride(), output_row) });
 
             // Transpose rows of N -> columns of N
-            Self::transpose_rows_to_cols(scratch_buffer);
+            Self::transpose_rows_to_cols(scratch_buffer, input_unpacked);
         }
 
         // pass 2: N FFTs which move rows of N/2+1 -> rows of N real
@@ -535,9 +553,9 @@ impl WaveGen {
         assert!(output_as_cmplx.len() == SIZE/2);
 
         {   
-            scratch_buffer[0..HALF_SIZE]
-                .par_chunks_exact_mut(HALF_WIDTH)
-                .zip_eq(output_as_cmplx.par_chunks_exact_mut(WIDTH/2))
+            input_unpacked
+                .chunks_exact_mut(HALF_WIDTH)
+                .zip_eq(output_as_cmplx.chunks_exact_mut(WIDTH/2))
                 .for_each(|(input_row, output_row)| {
                     unsafe {
                         // add conjugated signal to itself so F(i) = (x[0], x[1]), (x[2], x[3]) 
@@ -551,8 +569,8 @@ impl WaveGen {
 
     pub fn precompute_spectra(&self, wavebuffers: &mut [WaveBuffers; FILTER_COUNT]) {
         self.filters
-            .par_iter()
-            .zip_eq(wavebuffers.par_iter_mut())
+            .iter() // par_iter
+            .zip_eq(wavebuffers.iter_mut())
             .for_each(|(filter, wavebuf)| 
                 self.compute_spectra(&filter, &mut wavebuf.static_spectra))
     }
@@ -560,19 +578,20 @@ impl WaveGen {
     fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
         self.compute_factors(&wavebuf.timevaried_spectra, filter.get_domain(), filter.get_dk(), &mut wavebuf.factors);
+
         wavebuf.factors
-            .par_iter()
-            .zip_eq(wavebuf.fft_scratch.par_iter_mut())
-            .zip_eq(output_buffer.par_iter_mut())
+            .iter_mut() // par_iter
+            .zip_eq(wavebuf.fft_scratch.iter_mut())
+            .zip_eq(output_buffer.iter_mut())
             .for_each(|((fac, scratch), out)| 
-                Self::compute_fft_2d_2x(&fac, scratch, out));
+                Self::compute_fft_2d_2x(fac, scratch, out));
     }
 
     pub fn step(&self, time: f32, wavebuffers: &mut [WaveBuffers; FILTER_COUNT], output_buffer: &mut WaveGenOutput) {
         wavebuffers
-            .par_iter_mut()
-            .zip_eq(output_buffer.par_iter_mut())
-            .zip_eq(self.filters.par_iter())
+            .iter_mut() // par_iter
+            .zip_eq(output_buffer.iter_mut())
+            .zip_eq(self.filters.iter())
             .for_each(|((wavebuf, outbuf), filter)|
                 self.step_one(time, filter, wavebuf, outbuf));
     }

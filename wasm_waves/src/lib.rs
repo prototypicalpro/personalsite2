@@ -1,25 +1,18 @@
-#![feature(const_trait_impl)]
-#![feature(const_mut_refs)]
-#![feature(const_fn_floating_point_arithmetic)]
-#![feature(iter_collect_into)]
-#![feature(new_uninit)]
-
 use wasm_bindgen::{prelude::*};
 extern crate console_error_panic_hook;
-use rayon::prelude::*;
-pub use wasm_bindgen_rayon::init_thread_pool;
+// use rayon::prelude::*;
+// pub use wasm_bindgen_rayon::init_thread_pool;
 use itertools::{Itertools, izip};
 use web_sys::console;
+use std::arch::wasm32::*;
 use std::{pin::Pin, convert::TryFrom};
 
 mod const_twid;
 mod tuples_exact;
 mod wavegen;
 mod gamma;
-mod simd;
+pub mod simd;
 mod product_exact;
-mod collect_into_arrayvec;
-mod util;
 
 use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers, HALF_FACTOR_COUNT};
 use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
@@ -81,7 +74,7 @@ impl RetBuf {
 }
 
 #[wasm_bindgen(start)]
-pub fn main() {
+pub fn main_fn() {
     console_error_panic_hook::set_once();
 }
 
@@ -95,25 +88,30 @@ pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swel
 }
 
 fn pack_result(fft_out: &[Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
-    for i in 0..SIZE {
-        let (h, dx) = (fft_out[0][i*2], fft_out[0][i*2 + 1]);
-        let (dy, dxy) = (fft_out[1][i*2], fft_out[1][i*2 + 1]);
+    for i in (0..SIZE).step_by(2) {
+        let dxdy = f32x4(fft_out[0][i*2], fft_out[0][i*2 + 1], fft_out[0][i*2 + 2], fft_out[0][i*2 + 3]); // let (dx0, dx1, dy0, dy1)
+        let hdxy = f32x4(fft_out[1][i*2], fft_out[1][i*2 + 1], fft_out[1][i*2 + 2], fft_out[1][i*2 + 3]); // let (h0, h1, dxy0, dxy1)
 
-        pos_out[i*4] = h;
-        pos_out[i*4 + 1] = dx;
-        pos_out[i*4 + 2] = dy;
-        pos_out[i*4 + 3] = dxy;
+        let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxdy, hdxy);
+        let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxdy, hdxy);
+
+        unsafe {
+            v128_store(pos_out.as_mut_ptr().add(i*4) as *mut v128, lhs);
+            v128_store(pos_out.as_mut_ptr().add(i*4 + 4) as *mut v128, rhs);
+        }
     }
 
+    for i in (0..SIZE).step_by(2) {
+        let dxxdyy = f32x4(fft_out[2][i*2], fft_out[2][i*2 + 1], fft_out[2][i*2 + 2], fft_out[2][i*2 + 3]); // let (dx0, dx1, dy0, dy1)
+        let dzxdzy = f32x4(fft_out[3][i*2], fft_out[3][i*2 + 1], fft_out[3][i*2 + 2], fft_out[3][i*2 + 3]); // let (h0, h1, dxy0, dxy1)
 
-    for i in 0..SIZE {
-        let (dxx, dyy) = (fft_out[2][i*2], fft_out[2][i*2 + 1]);
-        let (dzx, dzy) = (fft_out[3][i*2], fft_out[3][i*2 + 1]);
+        let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxxdyy, dzxdzy);
+        let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxxdyy, dzxdzy);
 
-        partial_out[i*4] = dxx;
-        partial_out[i*4 + 1] = dyy;
-        partial_out[i*4 + 2] = dzx;
-        partial_out[i*4 + 3] = dzy;
+        unsafe {
+            v128_store(partial_out.as_mut_ptr().add(i*4) as *mut v128, lhs);
+            v128_store(partial_out.as_mut_ptr().add(i*4 + 4) as *mut v128, rhs);
+        }
     }
 }
 
@@ -129,10 +127,9 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
 
     wavegen.step(time, wavebuffers, fft_out);
 
-    fft_out
-        .par_iter()
-        .zip_eq(pos_out.par_iter_mut())
-        .zip_eq(partial_out.par_iter_mut())
+    fft_out.iter()
+        .zip_eq(pos_out.iter_mut())
+        .zip_eq(partial_out.iter_mut())
         .for_each(|((fft_slice, pos), partial)| 
             pack_result(fft_slice, pos, partial));
 

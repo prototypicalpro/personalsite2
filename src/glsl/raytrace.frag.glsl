@@ -286,7 +286,7 @@ void main() {
     // rays are shot from the camera into a light or the great beyond
     // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
 
-    // color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
+    // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
     vec3 color3 = 2.*LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
     vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);

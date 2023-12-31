@@ -1,6 +1,9 @@
 cli = "npm"
 
 [[crates]]
-name = "cargo"
+name = "wasm_waves"
 target = "web"
 link = true
+
+[crates.watch]
+profile = "release"

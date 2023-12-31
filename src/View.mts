@@ -15,11 +15,11 @@ import raytraceVert from "./glsl/raytrace.vert.glsl";
 import raytraceFrag from "./glsl/raytrace.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
-// import Tex from "./img/tex.jpg";
+import Tex from "./img/tex.jpg";
 // import Tex from "./img/shapes.jpg";
 // import Tex from "./img/e.png";
 // import Tex from "./img/space.jpg";
-import Tex from "./img/stars.jpg";
+// import Tex from "./img/stars.jpg";
 import im00 from "./img/skybox/im00.png";
 import im01 from "./img/skybox/im01.png";
 import im02 from "./img/skybox/im02.png";
@@ -40,7 +40,7 @@ export default class View {
         ],
         blending: [0.1, 0.5, 1],
         timeScale: 0.1,
-        segments: 2048,
+        segments: 256,
         depth: 10,
         visualDepth: 2,
         wind_speed: 10,

@@ -1,5 +1,5 @@
 [package]
-name = "wasm-bindgen-rayon-demo"
+name = "wasm_waves"
 version = "0.1.0"
 authors = ["Ingvar Stepanyan <rreverser@google.com>"]
 edition = "2021"
@@ -7,44 +7,42 @@ publish = false
 license = "Apache-2.0"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
 wasm-bindgen = "0.2.74"
-rayon = { version = "1.5" }
+# rayon = { version = "1.5" }
 console_error_panic_hook = "0.1.7"
-wasm-bindgen-rayon = { path = "./lib/wasm-bindgen-rayon" }
+# wasm-bindgen-rayon = { path = "./lib/wasm-bindgen-rayon" }
 wee_alloc = "0.4.5"
 itertools = "0.10.3"
 getrandom = { version = "0.2", features = ["js"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
 rand_distr = "0.4.3"
-arrayvec = "0.7.2"
+# arrayvec = "0.7.2"
 strided = "0.2.9"
 web-sys = { version = "0.3.58", features = ['console'] }
 js-sys = "0.3.58"
 num-complex = "0.4.2"
 
+[dev-dependencies]
+wasm-bindgen-test = "0.3.39"
+
 # TODO: reenable wasm-opt as a separate pass
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+# wasm-opt = false
 
-[package.metadata.wasm-pack.profile.release.wasm-bindgen]
-debug-js-glue = true
-demangle-name-section = true
-dwarf-debug-info = true
+# [package.metadata.wasm-pack.profile.release.wasm-bindgen]
+# debug-js-glue = true
+# demangle-name-section = true
+# dwarf-debug-info = true
 
 [profile.release]
 lto = true
 # debug = true
-opt-level = 3
+# opt-level = 3
 # panic = "abort" # TODO: enable for release with -Z -Z build-std-features=panic_immediate_abort
-
-[profile.dev]
-lto = true
-# debug = true
-opt-level = 3
 
 [build]
 target = "wasm32-unknown-unknown"

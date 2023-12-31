@@ -25,7 +25,7 @@ async function initHandlers() {
     // TODO: throw if no threads
     const hasThreads = await threads();
 
-    const multiThread = await import("wasm-bindgen-rayon-demo");
+    const multiThread = await import("wasm_waves");
 
     const stuff = await multiThread.default(
         undefined,
@@ -37,7 +37,8 @@ async function initHandlers() {
     );
     const retbuf = new multiThread.RetBuf();
 
-    await multiThread.initThreadPool(navigator.hardwareConcurrency);
+    if (multiThread?.initThreadPool)
+        await multiThread.initThreadPool(navigator.hardwareConcurrency);
 
     // const fixFFTInput = (real, complex) => { multiThread.fft_2d(new multiThread.Ret2D(real, complex)) };
     const pos_out = retbuf.get_pos_out_ptr();
