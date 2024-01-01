@@ -6,4 +6,4 @@ target = "web"
 link = true
 
 [crates.watch]
-profile = "release"
+# profile = "release"

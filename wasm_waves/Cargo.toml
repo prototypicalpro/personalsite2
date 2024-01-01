@@ -33,15 +33,21 @@ wasm-bindgen-test = "0.3.39"
 [package.metadata.wasm-pack.profile.release]
 # wasm-opt = false
 
+[package.metadata.wasm-pack.profile.dev.wasm-bindgen]
+dwarf-debug-info = true
+
 # [package.metadata.wasm-pack.profile.release.wasm-bindgen]
 # debug-js-glue = true
 # demangle-name-section = true
 # dwarf-debug-info = true
 
+[profile.dev]
+opt-level = "z"
+
 [profile.release]
 lto = true
 # debug = true
-# opt-level = 3
+opt-level = 3
 # panic = "abort" # TODO: enable for release with -Z -Z build-std-features=panic_immediate_abort
 
 [build]

@@ -1,3 +1,5 @@
+#![feature(new_uninit)]
+
 use wasm_bindgen::{prelude::*};
 extern crate console_error_panic_hook;
 // use rayon::prelude::*;
@@ -8,32 +10,18 @@ use std::arch::wasm32::*;
 use std::{pin::Pin, convert::TryFrom};
 
 mod const_twid;
-mod tuples_exact;
 mod wavegen;
 mod gamma;
 pub mod simd;
-mod product_exact;
 
-use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers, HALF_FACTOR_COUNT};
+use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers, HALF_FACTOR_COUNT, HALF_SIZE};
 use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
 
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 // #[global_allocator]
-// static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-trait DiscreetUnwrap<T, E> {
-    fn duwrp(self) -> T;
-}
-
-impl<T, E> DiscreetUnwrap<T, E> for Result<T, E> {
-    fn duwrp(self) -> T  {
-        match self {
-            Ok(r) => r,
-            Err(_) => {
-                panic!("duwrp() failed.")
-            },
-        }
-    }
-}
+// static GLOBAL_ALLOCATOR: WasmTracingAllocator<System> = WasmTracingAllocator(System);
 
 const PACKED_SIZE: usize = SIZE*4;
 
@@ -59,8 +47,8 @@ impl RetBuf {
             field: None,
             wavebuffers: WaveGen::make_wavebuffers(),
             fft_out: WaveGen::make_output_buffer(),
-            pos_out: Pin::new(Box::new([[0.0; PACKED_SIZE]; FILTER_COUNT])),
-            partial_out: Pin::new(Box::new([[0.0; PACKED_SIZE]; FILTER_COUNT])),
+            pos_out: Pin::new(unsafe { Box::new_uninit().assume_init() }),
+            partial_out: Pin::new(unsafe { Box::new_uninit().assume_init() }),
         }
     }
 
@@ -87,28 +75,28 @@ pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swel
     output.field = Some(wavefield);
 }
 
-fn pack_result(fft_out: &[Box<[f32; SIZE*f32::COMPLEX_PER_VECTOR]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
+fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
     for i in (0..SIZE).step_by(2) {
-        let dxdy = f32x4(fft_out[0][i*2], fft_out[0][i*2 + 1], fft_out[0][i*2 + 2], fft_out[0][i*2 + 3]); // let (dx0, dx1, dy0, dy1)
-        let hdxy = f32x4(fft_out[1][i*2], fft_out[1][i*2 + 1], fft_out[1][i*2 + 2], fft_out[1][i*2 + 3]); // let (h0, h1, dxy0, dxy1)
-
-        let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxdy, hdxy);
-        let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxdy, hdxy);
-
         unsafe {
+            let dxdy = v128_load(fft_out[0].as_ptr().add(i*2) as *const v128); // let (dx0, dx1, dy0, dy1)
+            let hdxy = v128_load(fft_out[1].as_ptr().add(i*2) as *const v128); // let (h0, h1, dxy0, dxy1)
+
+            let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxdy, hdxy);
+            let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxdy, hdxy);
+
             v128_store(pos_out.as_mut_ptr().add(i*4) as *mut v128, lhs);
             v128_store(pos_out.as_mut_ptr().add(i*4 + 4) as *mut v128, rhs);
         }
     }
 
     for i in (0..SIZE).step_by(2) {
-        let dxxdyy = f32x4(fft_out[2][i*2], fft_out[2][i*2 + 1], fft_out[2][i*2 + 2], fft_out[2][i*2 + 3]); // let (dx0, dx1, dy0, dy1)
-        let dzxdzy = f32x4(fft_out[3][i*2], fft_out[3][i*2 + 1], fft_out[3][i*2 + 2], fft_out[3][i*2 + 3]); // let (h0, h1, dxy0, dxy1)
-
-        let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxxdyy, dzxdzy);
-        let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxxdyy, dzxdzy);
-
         unsafe {
+            let dxxdyy = v128_load(fft_out[2].as_ptr().add(i*2) as *const v128); // let (dx0, dx1, dy0, dy1)
+            let dzxdzy = v128_load(fft_out[3].as_ptr().add(i*2) as *const v128); // let (h0, h1, dxy0, dxy1)
+
+            let lhs = u32x4_shuffle::<0, 2, 4, 6>(dxxdyy, dzxdzy);
+            let rhs = u32x4_shuffle::<1, 3, 5, 7>(dxxdyy, dzxdzy);
+
             v128_store(partial_out.as_mut_ptr().add(i*4) as *mut v128, lhs);
             v128_store(partial_out.as_mut_ptr().add(i*4 + 4) as *mut v128, rhs);
         }
