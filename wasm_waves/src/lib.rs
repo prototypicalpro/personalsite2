@@ -104,7 +104,7 @@ fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_
 }
 
 #[wasm_bindgen]
-pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
+pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
     web_sys::console::time_with_label(&"height_field");
 
     let wavegen = wavefield.field.as_mut().unwrap();
@@ -129,8 +129,8 @@ pub fn gen_and_paint_height_field(wavefield: &mut RetBuf, time: f32) {
     //     .flat_map_iter(|((h, x), y)| [normalize(h.clone()), /* normalize(x.0), normalize(y.0) */ 0_u8, 0_u8, 255_u8])
     //     .collect();
     
-    // let minmax = fft_out[1].as_slice().into_iter().map(|c| c.0).minmax().into_option().unwrap();
-    // web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
+    let minmax = pos_out.as_slice().into_iter().map(|c| c[0]).minmax().into_option().unwrap();
+    web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
     
     web_sys::console::time_end_with_label(&"height_field");
 

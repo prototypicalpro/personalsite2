@@ -194,11 +194,11 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, fl
         float proj = max(0., dot(wn, -wi)) / wn.z;
         float f = 1. - fresnel(-wi, wn, secMoments);
 
-        vec3 rtex = sampleReflectLEADR(wi, wn, lodOffset);
-        // vec3 ftex = sampleRefractLEADR(wi, wn, lodOffset);
+        // vec3 rtex = sampleReflectLEADR(wi, wn, lodOffset);
+        vec3 ftex = sampleRefractLEADR(wi, wn, lodOffset);
         // vec3 tex = rtex + 0.7*ftex;
 
-        I += Wn*proj*rtex*f;
+        I += Wn*proj*ftex*f;
         S += Wn*proj;
     }
 
@@ -288,7 +288,7 @@ void main() {
 
     // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
-    vec3 color3 = 2.*LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
     vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
     color = vec4(color3 + spec3, 1.);
     // color = vec4(color3, 1.);

@@ -15,8 +15,8 @@ import raytraceVert from "./glsl/raytrace.vert.glsl";
 import raytraceFrag from "./glsl/raytrace.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
-import Tex from "./img/tex.jpg";
-// import Tex from "./img/shapes.jpg";
+// import Tex from "./img/tex.jpg";
+import Tex from "./img/shapes.jpg";
 // import Tex from "./img/e.png";
 // import Tex from "./img/space.jpg";
 // import Tex from "./img/stars.jpg";
@@ -48,13 +48,13 @@ export default class View {
         damping: 3.3,
         swell: 0.9,
         tiling_off: 0.1,
-        LeadrSampleCount: 5,
+        LeadrSampleCount: 9,
         LeadrSampleSize: 1.8,
     };
 
     static readonly sunDirection = new THREE.Vector3(0, -6, -1).normalize();
 
-    worker: WorkerHandlers;
+    wasmWaves: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
     camera: THREE.Camera;
     scene: THREE.Scene;
@@ -68,7 +68,6 @@ export default class View {
     private debugRenderTarget: THREE.WebGLRenderTarget;
 
     makeTex: MakeTex;
-    private memory: WebAssembly.Memory;
     private posPtr: number;
     private partPtr: number;
 
@@ -80,12 +79,13 @@ export default class View {
         canvasElem: HTMLCanvasElement,
         tex: THREE.Texture,
         cubeTex: THREE.CubeTexture,
-        worker: WorkerHandlers,
-        memory: [WebAssembly.Memory, number, number],
+        wasmWaves: WorkerHandlers,
+        public memory: WebAssembly.Memory,
+        ptrs: [number, number],
     ) {
-        [this.memory, this.posPtr, this.partPtr] = memory;
+        [this.posPtr, this.partPtr] = ptrs;
+        this.wasmWaves = wasmWaves;
 
-        this.worker = worker;
         this.renderer = new THREE.WebGLRenderer({
             canvas: canvasElem,
             stencil: false,
@@ -156,8 +156,8 @@ export default class View {
         canvasElem: HTMLCanvasElement,
         worker: WorkerHandlers,
     ) {
-        const mem = await worker.memoryView();
-        await worker.setup(View.waveProps);
+        const wasmWavesMem = await worker.setup(View.waveProps);
+        const ptrs = await worker.getPtrs();
         const tex = await new THREE.TextureLoader().loadAsync(Tex);
         const cubeTex = await new THREE.CubeTextureLoader().loadAsync([
             // im12,
@@ -174,7 +174,7 @@ export default class View {
             im00, // nz
         ]);
 
-        return new View(canvasElem, tex, cubeTex, worker, mem);
+        return new View(canvasElem, tex, cubeTex, worker, wasmWavesMem, ptrs);
     }
 
     private makeRaytraceDefines() {
@@ -263,13 +263,20 @@ export default class View {
             geoBufs[i].array = floatView;
             (geoBufs[i].count as number) = PACKED_SIZE;
             geoBufs[i].needsUpdate = true;
+
+            let min = 0;
+            for (const f of floatView) {
+                min = Math.min(min, f);
+            }
+
+            console.log("min is", min);
         }
     }
 
     public async update(secs: number) {
         // this.makeSkybox.render(this.renderer, secs);
 
-        await this.worker.render({ time: secs * View.waveProps.timeScale });
+        this.wasmWaves.render({ time: secs * View.waveProps.timeScale });
 
         this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
         this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
