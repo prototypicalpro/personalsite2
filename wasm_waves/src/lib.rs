@@ -67,10 +67,10 @@ pub fn main_fn() {
 }
 
 #[wasm_bindgen]
-pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32], output: &mut RetBuf) {
+pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf) {
     let windows = <[f32; FILTER_COUNT*2]>::try_from(windows).unwrap();
 
-    let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, &windows));
+    let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, swell_off, &windows));
     wavefield.precompute_spectra(&mut output.wavebuffers);
     output.field = Some(wavefield);
 }
@@ -129,8 +129,8 @@ pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
     //     .flat_map_iter(|((h, x), y)| [normalize(h.clone()), /* normalize(x.0), normalize(y.0) */ 0_u8, 0_u8, 255_u8])
     //     .collect();
     
-    let minmax = pos_out.as_slice().into_iter().map(|c| c[0]).minmax().into_option().unwrap();
-    web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
+    // let minmax = pos_out.as_slice().into_iter().map(|c| c[0]).minmax().into_option().unwrap();
+    // web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
     
     web_sys::console::time_end_with_label(&"height_field");
 

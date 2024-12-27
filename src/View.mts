@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { stripHeader, makeRenderTarget } from "./GLUtils.mjs";
 import { WorkerHandlers } from "./wasm_worker_types.mjs";
 import {
@@ -30,7 +30,7 @@ import MakeSkybox from "./MakeSkybox.mjs";
 
 export default class View {
     static readonly waveProps = {
-        windows: [0, 0.1, 0.1, 1, 1, 10] as [
+        windows: [0, 0.1, 0.1, 5, 5, 10] as [
             number,
             number,
             number,
@@ -38,21 +38,30 @@ export default class View {
             number,
             number,
         ],
-        blending: [0.1, 0.5, 1],
-        timeScale: 0.1,
+        blending: [0.0, 0.6, 1],
+        timeScale: 0.5,
         segments: 256,
-        depth: 10,
+        depth: 1000,
         visualDepth: 2,
         wind_speed: 10,
-        fetch: 1000000,
+        fetch: 1000,
         damping: 3.3,
-        swell: 0.9,
+        swell: 0.5,
+        rad_off: -60 * Math.PI / 180,
         tiling_off: 0.1,
         LeadrSampleCount: 9,
         LeadrSampleSize: 1.8,
     };
 
-    static readonly sunDirection = new THREE.Vector3(0, -6, -1).normalize();
+    static readonly sunDirection = new THREE.Vector3(0, -12, -1).normalize();
+    static readonly sunColorTable = [
+        { color: new THREE.Color(0x320019), thresh: 0.0 },
+        { color: new THREE.Color(0x911C29), thresh: 0.4 },
+        { color: new THREE.Color(0x9B2029), thresh: 0.5 },
+        { color: new THREE.Color(0x881A26), thresh: 0.6 },
+        { color: new THREE.Color(0xAC3027), thresh: 0.8 },
+        { color: new THREE.Color(0xFFD800), thresh: 0.99 },
+    ];
 
     wasmWaves: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
@@ -105,14 +114,14 @@ export default class View {
 
         this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
 
-        this.camera = new THREE.PerspectiveCamera(90, 1, 0.1, 10000);
-        this.camera.position.z = 1;
-
+        this.camera = new THREE.PerspectiveCamera(50, 1, 0.2, 10000);
+        
         this.makeSkybox = new MakeSkybox(View.sunDirection);
 
         this.scene = new THREE.Scene();
 
         this.controls = new OrbitControls(this.camera, canvasElem);
+        this.camera.position.set(0, -8, 1);
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
@@ -196,6 +205,7 @@ export default class View {
             LEADR_SAMPLE_COUNT: LeadrSampleCount,
             LEADR_SAMPLE_SIZE: LeadrSampleSize.toPrecision(21),
             LEADR_WEIGHTS: preinitVals.join(", "),
+            SUNSET_COLOR_COUNT: View.sunColorTable.length
         };
     }
 
@@ -227,6 +237,18 @@ export default class View {
             0,
         );
 
+        const colorTable = View.sunColorTable.map((c, i, table) => {
+            const colorPacked = new THREE.Vector4(c.color.r, c.color.g, c.color.b, c.thresh);
+            if (i > 0) {
+                const last = table[i - 1];
+                colorPacked.setX(colorPacked.x - last.color.r);
+                colorPacked.setY(colorPacked.y - last.color.g);
+                colorPacked.setZ(colorPacked.z - last.color.b);
+            }
+            return colorPacked;
+        });
+        console.log(colorTable);
+
         return {
             waveDisplacement: new THREE.Uniform(
                 this.makeTex.getDisplacementTexs(),
@@ -245,7 +267,7 @@ export default class View {
             floorSize: new THREE.Uniform(windows[5]),
             floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
-            sunColor: new THREE.Uniform(new THREE.Vector3(1, 1, 1)),
+            sunsetColorTable: new THREE.Uniform(colorTable),
             // skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
             skyboxTex: new THREE.Uniform(this.scene.background),
             waveBlending: new THREE.Uniform(blending),
@@ -263,24 +285,17 @@ export default class View {
             geoBufs[i].array = floatView;
             (geoBufs[i].count as number) = PACKED_SIZE;
             geoBufs[i].needsUpdate = true;
-
-            let min = 0;
-            for (const f of floatView) {
-                min = Math.min(min, f);
-            }
-
-            console.log("min is", min);
         }
     }
 
-    public async update(secs: number) {
+    public async update(secs: number, updateWaves: boolean = true) {
         // this.makeSkybox.render(this.renderer, secs);
-
-        this.wasmWaves.render({ time: secs * View.waveProps.timeScale });
-
-        this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
-        this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
-        this.makeTex.render(this.renderer);
+        if (updateWaves) {
+            this.wasmWaves.render({ time: secs * View.waveProps.timeScale });
+            this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
+            this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
+            this.makeTex.render(this.renderer);
+        }
 
         // const out = new Float32Array(PACKED_SIZE_FLOATS);
         // readMultipleRenderTargetPixels(
@@ -291,6 +306,8 @@ export default class View {
         //     out
         // );
         // console.log(out);
+
+        this.controls.update();
 
         this.renderer.setRenderTarget(null);
         this.renderer.render(this.scene, this.camera);

@@ -7,6 +7,7 @@ export default class WasmWaves {
         fetch,
         damping,
         swell,
+        rad_off,
         windows,
     }: {
         depth: number;
@@ -14,6 +15,7 @@ export default class WasmWaves {
         fetch: number;
         damping: number;
         swell: number;
+        rad_off: number;
         windows: [number, number, number, number, number, number];
     }): Promise<WasmWaves> {
         const ret = await WasmWavesAsm.default();
@@ -28,6 +30,7 @@ export default class WasmWaves {
             fetch,
             damping,
             swell,
+            rad_off,
             new Float32Array(windows),
             retBuf,
         );

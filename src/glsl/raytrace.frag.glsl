@@ -4,6 +4,8 @@
 #define LEADR_SAMPLE_SIZE 1.
 #define LEADR_WEIGHTS vec4(0, 0, 0, 0)
 
+#define SUNSET_COLOR_COUNT 1
+
 // all code above this line removed at runtime
 #pragma end_pre_strip
 
@@ -39,6 +41,7 @@ uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
 uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
 uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
 uniform float waveBlending[FILTER_COUNT];
+uniform vec4 sunsetColorTable[SUNSET_COLOR_COUNT];
 
 in vec2 v_wave_tex_uv[FILTER_COUNT];
 // in float v_wave_blending[FILTER_COUNT];
@@ -162,6 +165,25 @@ vec3 sampleReflectLEADR(vec3 wi, vec3 wn, float lodOffset) {
     lod = max(lodMin, lod); // TODO: remove LOD clamp?
 
     return textureLod(skyboxTex, wr, lod).xyz;
+}
+
+vec3 SamuraiReflectionSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy) {
+    // const vec3 macronormal = vec3(0, 0, 1.);
+    const float steps = 8.;
+    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
+    vec3 wr = reflect(wi, wn);
+    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
+    float lodOffset = -1.0 + log2(LEADR_SAMPLE_SIZE * (0.5 / 1.5) * max(sigma.x, sigma.y) * 2048.0);
+
+    float angle = dot(-wr, sunDirection);
+
+    vec3 color = vec3(0);
+#pragma unroll_loop_start
+    for (int i = 0; i < SUNSET_COLOR_COUNT; i++) {
+        color = color + sunsetColorTable[i].rgb*step(sunsetColorTable[i].a, angle);
+    }
+#pragma unroll_loop_end
+    return color;
 }
 
 // TODO: environment map sampling using LEDAR maps for transmitted light
@@ -288,8 +310,9 @@ void main() {
 
     // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
-    vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
+    // vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    vec3 color3 = SamuraiReflectionSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    vec3 spec3 = vec3(0, 0, 0); // 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
     color = vec4(color3 + spec3, 1.);
     // color = vec4(color3, 1.);
 

@@ -117,6 +117,7 @@ pub struct WaveGen {
     tma_gain: f32,
     hassleman_raisefactor: f32,
     horvath_swell: f32,
+    rotation_matrix: (f32, f32),
     filters: [WaveWindow; FILTER_COUNT],
     rand_seed: u64
 }
@@ -144,7 +145,7 @@ impl WaveGen {
     /// * `fetch` - Large number (~800000)
     /// * `damping` - Wave damping from 1-6 (start with 3.3)
     /// * `swell` - Wave swell from 0 - 1
-    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, windows: &[f32; FILTER_COUNT*2]) -> WaveGen {
+    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, rad_offset: f32, windows: &[f32; FILTER_COUNT*2]) -> WaveGen {
         let alpha = 0.076*(wind_speed.powi(2) / (GRAVITY*fetch)).abs().powf(0.22);
         let dimless_fetch = GRAVITY*fetch / wind_speed.powi(2);
         let omega_p = TAU*3.5*(GRAVITY / wind_speed)*dimless_fetch.powf(-0.33);
@@ -159,6 +160,7 @@ impl WaveGen {
             tma_gain: tma_gain, 
             hassleman_raisefactor: hassleman_raise,
             horvath_swell: swell,
+            rotation_matrix: (rad_offset.cos(), rad_offset.sin()),
             filters: [
                 WaveWindow::new_sharp(windows[0], windows[1]),
                 WaveWindow::new_sharp(windows[2], windows[3]),
@@ -254,8 +256,6 @@ impl WaveGen {
         }
 
         let (omega, domega_dk) = self.capilary_dispersion(k_mag);
-        // assert!(omega >= 0.0 && omega.is_finite());
-        // assert!(domega_dk >= 0.0 && domega_dk.is_finite());
 
         let change_term = dk.powi(2)*domega_dk / k_mag;
         
@@ -289,7 +289,11 @@ impl WaveGen {
                 let y_rev = if y <= WIDTH / 2 { y as isize } else { y as isize - WIDTH as isize };
                 let ki = (x as f32) * TAU / domain;
                 let kj = (y_rev as f32) * TAU / domain;
-                ((ki, kj), ki.hypot(kj), i)
+                
+                let rki = ki*self.rotation_matrix.0 - kj*self.rotation_matrix.1;
+                let rkj = ki*self.rotation_matrix.1 + kj*self.rotation_matrix.0;
+
+                ((rki, rki), rki.hypot(rkj), i)
             })
     }
     
@@ -312,7 +316,9 @@ impl WaveGen {
                 let bkwd = Complex32::from_polar(1.0, omega_t);
                 let fwd = bkwd.conj();
                 
-                w.pos_spec*fwd + w.neg_spec*bkwd
+                let ret = w.pos_spec*fwd + w.neg_spec*bkwd;
+                // assert!(ret.is_finite());
+                ret
             })
             .zip_eq(out_buffer.iter_mut())
             .for_each(|(res, elem)| *elem = res);
@@ -345,7 +351,10 @@ impl WaveGen {
                     .map(|(h, ((kx, ky), k_mag, _))| {
                         if k_mag != 0.0 
                         { 
-                            [mapfunc0(&h, kx, ky, k_mag), mapfunc1(&h, kx, ky, k_mag)]
+                            let ret = [mapfunc0(&h, kx, ky, k_mag), mapfunc1(&h, kx, ky, k_mag)];
+                            // assert!(ret[0].is_finite());
+                            // assert!(ret[1].is_finite());
+                            ret
                         } else { 
                             [Complex32::zero(), Complex32::zero()]
                         }
@@ -589,5 +598,7 @@ impl WaveGen {
             .zip_eq(self.filters.iter())
             .for_each(|((wavebuf, outbuf), filter)|
                 self.step_one(time, filter, wavebuf, outbuf));
+
+        // assert!(output_buffer.iter().all(|f| f.iter().all(|j| j.iter().all(|k| k.is_finite()))));
     }
 }
