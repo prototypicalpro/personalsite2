@@ -6,6 +6,8 @@
 
 #define SUNSET_COLOR_COUNT 1
 
+#define UNROLLED_LOOP_INDEX 0
+
 // all code above this line removed at runtime
 #pragma end_pre_strip
 
@@ -18,6 +20,7 @@ precision highp sampler2D;
 const float TWO_PI = 6.28318530717958647693;
 const float AIR_REFRACT = 1.;
 const float WATER_REFRACT = 4./3.;
+const float OIL_REFRACT = 1.5;
 const float ETA = AIR_REFRACT / WATER_REFRACT;
 const float INV_ETA = WATER_REFRACT / AIR_REFRACT;
 
@@ -42,6 +45,7 @@ uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
 uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
 uniform float waveBlending[FILTER_COUNT];
 uniform vec4 sunsetColorTable[SUNSET_COLOR_COUNT];
+uniform float hueOff;
 
 in vec2 v_wave_tex_uv[FILTER_COUNT];
 // in float v_wave_blending[FILTER_COUNT];
@@ -149,7 +153,8 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float lodOffset) {
 
     vec3 floorIntersect = v_position + d*wt;
     vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
-    return textureProjLod(floorTexture, floorTex, lod).xyz;
+    // return textureProjLod(floorTexture, floorTex, lod).xyz;
+    return vec3(1., 0., 0.);
 }
 
 vec3 sampleReflectLEADR(vec3 wi, vec3 wn, float lodOffset) {
@@ -175,15 +180,103 @@ vec3 SamuraiReflectionSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, floa
     vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
     float lodOffset = -1.0 + log2(LEADR_SAMPLE_SIZE * (0.5 / 1.5) * max(sigma.x, sigma.y) * 2048.0);
 
-    float angle = dot(-wr, sunDirection);
+    float angle = abs(dot(-normalize(wr.yz), normalize(sunDirection.yz)));
+    angle = mix(angle, 0.8, clamp(sqrt(max(sigma.x, sigma.y)) * 0.01, 0., 1.));
 
-    vec3 color = vec3(0);
+    vec3 color3 = vec3(0);
 #pragma unroll_loop_start
     for (int i = 0; i < SUNSET_COLOR_COUNT; i++) {
-        color = color + sunsetColorTable[i].rgb*step(sunsetColorTable[i].a, angle);
+        color3 = color3 + sunsetColorTable[i].rgb*step(sunsetColorTable[i].a, angle);
     }
 #pragma unroll_loop_end
-    return color;
+    return color3;
+}
+
+// All components are in the range [0…1], including hue.
+vec3 hsv2rgb(vec3 c)
+{
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec3 HueWheelSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy, float off) {
+    // const vec3 macronormal = vec3(0, 0, 1.);
+    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
+    vec3 wr = reflect(wi, wn);
+    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
+
+    float angle = clamp(abs(dot(-normalize(wr.yz), normalize(sunDirection.yz))), 0., 1.);
+    angle = mix(angle, 0.8, clamp(sqrt(max(sigma.x, sigma.y)) * 0.5, 0., 1.));
+    angle = fract(angle + off);
+
+    // float sigmaTerm = 1. - clamp(sqrt(max(sigma.x, sigma.y))*0.5, 0., 0.5);
+    return hsv2rgb(vec3(clamp(angle, 0., 1.), 1., 1.));
+}
+
+// https://www.shadertoy.com/view/ls2Bz1
+float saturate (float x)
+{
+    return clamp(x, 0., 1.);
+}
+vec3 saturate (vec3 x)
+{
+    return clamp(x, 0., 1.);
+}
+
+vec3 bump3y (vec3 x, vec3 yoffset)
+{
+	vec3 y = vec3(1.,1.,1.) - x * x;
+	y = saturate(y-yoffset);
+	return y;
+}
+
+vec3 spectral_zucconi6 (float w)
+{
+	// w: [400, 700]
+	// x: [0,   1]
+	float x = saturate((w - 400.0)/ 300.0);
+
+	const vec3 c1 = vec3(3.54585104, 2.93225262, 2.41593945);
+	const vec3 x1 = vec3(0.69549072, 0.49228336, 0.27699880);
+	const vec3 y1 = vec3(0.02312639, 0.15225084, 0.52607955);
+
+	const vec3 c2 = vec3(3.90307140, 3.21182957, 3.96587128);
+	const vec3 x2 = vec3(0.11748627, 0.86755042, 0.66077860);
+	const vec3 y2 = vec3(0.84897130, 0.88445281, 0.73949448);
+
+	return
+		bump3y(c1 * (x - x1), y1) +
+		bump3y(c2 * (x - x2), y2) ;
+}
+
+float smoothstep_spectral(float w) {
+    return smoothstep(300., 400., w)*(1. - smoothstep(700., 800., w));
+}
+
+vec3 sample_slick(float w) {
+    return spectral_zucconi6(w)*smoothstep_spectral(w);
+}
+
+vec3 OilSlickSampling(vec3 position, vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy, float off) {
+    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
+    float oil_thickness = max(sigma.x, sigma.y)*500. + 100.;
+    // float oil_thickness = position.z*1000. + 200.;  // + max(sigma.x, sigma.y)*400.;
+    // float oil_thickness = 200.;
+
+    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
+    vec3 wp = refract(wi, wn, AIR_REFRACT / OIL_REFRACT);
+    float lambda_base = 2.*OIL_REFRACT*oil_thickness*abs(dot(wp, wn));
+
+    vec3 color3 = vec3(0);
+
+#pragma unroll_loop_start
+    for (int i = 0; i < 4; i++) {
+        color3 = color3 + sample_slick(lambda_base / float(UNROLLED_LOOP_INDEX));
+    }
+#pragma unroll_loop_end
+
+    return color3;
 }
 
 // TODO: environment map sampling using LEDAR maps for transmitted light
@@ -216,7 +309,7 @@ vec3 LEADREnvironmentMapSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, fl
         float proj = max(0., dot(wn, -wi)) / wn.z;
         float f = 1. - fresnel(-wi, wn, secMoments);
 
-        // vec3 rtex = sampleReflectLEADR(wi, wn, lodOffset);
+        // vec3 ftex = sampleReflectLEADR(wi, wn, lodOffset);
         vec3 ftex = sampleRefractLEADR(wi, wn, lodOffset);
         // vec3 tex = rtex + 0.7*ftex;
 
@@ -284,7 +377,8 @@ vec3 LEADRSpecular(vec3 wi, vec2 firstMoments, vec3 secMoments, float c_xy) {
     vec3 wr = reflect(wi, wn);
     vec3 skyVec = wr - sunDirection;
 
-    vec3 sky = texture(skyboxTex, wr).rgb;
+    // vec3 sky = texture(skyboxTex, wr).rgb;
+    vec3 sky = vec3(1., 0.8, 0.9);
     return I*sky;
 }
 
@@ -310,11 +404,23 @@ void main() {
 
     // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
-    // vec3 color3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    vec3 color3 = SamuraiReflectionSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    vec3 spec3 = vec3(0, 0, 0); // 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
-    color = vec4(color3 + spec3, 1.);
-    // color = vec4(color3, 1.);
+    vec3 ledar3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    // vec3 samurai3 = SamuraiReflectionSampling(v_camera_normal, firstMoments, secMoments, cxy);
+    // vec3 hue3 = HueWheelSampling(v_camera_normal, firstMoments, secMoments, cxy, hueOff);
+    // vec3 slick3 = OilSlickSampling(v_position, v_camera_normal, firstMoments, secMoments, cxy, hueOff);
+
+    vec3 color3 = ledar3;
+
+    vec2 positive = smoothstep(-0.8, 0.8, v_position.xy);
+    vec2 negative = 1. - positive;
+    // vec3 color3 = ledar3*positive.x*positive.y + samurai3*negative.x*positive.y + hue3*negative.x*negative.y + slick3*positive.x*negative.y;
+
+    // the closer we are to the camera in the y plane, the darker the color should be to mimic sunset vibes
+    // color3 = color3 * smoothstep(0.8, 1., gl_FragCoord.z);
+
+    // vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
+    // color = vec4(color3 + spec3, 1.);
+    color = vec4(color3, 1.);
 
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);

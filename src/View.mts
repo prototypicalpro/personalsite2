@@ -30,7 +30,7 @@ import MakeSkybox from "./MakeSkybox.mjs";
 
 export default class View {
     static readonly waveProps = {
-        windows: [0, 0.1, 0.1, 5, 5, 10] as [
+        windows: [0, 0.1, 0.13, 5, 5, 10] as [
             number,
             number,
             number,
@@ -38,31 +38,33 @@ export default class View {
             number,
             number,
         ],
-        blending: [0.0, 0.6, 1],
-        timeScale: 0.5,
+        blending: [0, 0.6, 1],
+        timeScale: 1,
         segments: 256,
-        depth: 1000,
+        depth: 100000,
         visualDepth: 2,
         wind_speed: 10,
-        fetch: 1000,
+        fetch: 1500,
         damping: 3.3,
-        swell: 0.5,
+        swell: 0.8,
         rad_off: -60 * Math.PI / 180,
         tiling_off: 0.1,
-        LeadrSampleCount: 9,
+        LeadrSampleCount: 3,
         LeadrSampleSize: 1.8,
     };
 
     static readonly sunDirection = new THREE.Vector3(0, -12, -1).normalize();
     static readonly sunColorTable = [
-        { color: new THREE.Color(0x320019), thresh: 0.0 },
-        { color: new THREE.Color(0x911C29), thresh: 0.4 },
-        { color: new THREE.Color(0x9B2029), thresh: 0.5 },
-        { color: new THREE.Color(0x881A26), thresh: 0.6 },
-        { color: new THREE.Color(0xAC3027), thresh: 0.8 },
-        { color: new THREE.Color(0xFFD800), thresh: 0.99 },
+        //{ color: new THREE.Color(0xC70039), thresh: 0.0 },
+        { color: new THREE.Color(0xFF4500), thresh: 0.0 },
+        { color: new THREE.Color(0xFF6347), thresh: 0.9 },
+        { color: new THREE.Color(0xFF8C00), thresh: 0.93 },
+        { color: new THREE.Color(0xFFA500), thresh: 0.99 },
+        // { color: new THREE.Color(0xFFD700), thresh: 0.97 },
+        // { color: new THREE.Color(0xb200ff), thresh: 0.995 },
     ];
 
+    hueOff: THREE.Uniform = new THREE.Uniform(0);
     wasmWaves: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
     camera: THREE.Camera;
@@ -98,7 +100,7 @@ export default class View {
         this.renderer = new THREE.WebGLRenderer({
             canvas: canvasElem,
             stencil: false,
-            depth: false,
+            depth: true,
             antialias: true,
             powerPreference: "high-performance",
         });
@@ -247,7 +249,6 @@ export default class View {
             }
             return colorPacked;
         });
-        console.log(colorTable);
 
         return {
             waveDisplacement: new THREE.Uniform(
@@ -271,6 +272,7 @@ export default class View {
             // skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
             skyboxTex: new THREE.Uniform(this.scene.background),
             waveBlending: new THREE.Uniform(blending),
+            hueOff: this.hueOff,
         };
     }
 
@@ -295,6 +297,8 @@ export default class View {
             this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
             this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
             this.makeTex.render(this.renderer);
+
+            this.hueOff.value += 0.001;
         }
 
         // const out = new Float32Array(PACKED_SIZE_FLOATS);
