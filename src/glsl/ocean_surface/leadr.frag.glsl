@@ -1,58 +1,16 @@
 #version 300 es
+#extension GL_GOOGLE_include_directive : enable
 
 #define LEADR_SAMPLE_COUNT 1
 #define LEADR_SAMPLE_SIZE 1.
 #define LEADR_WEIGHTS vec4(0, 0, 0, 0)
-
 #define SUNSET_COLOR_COUNT 1
-
 #define UNROLLED_LOOP_INDEX 0
 
 // all code above this line removed at runtime
 #pragma end_pre_strip
 
-#define FILTER_COUNT 3
-
-precision highp float;
-precision highp int;
-precision highp sampler2D;
-
-const float TWO_PI = 6.28318530717958647693;
-const float AIR_REFRACT = 1.;
-const float WATER_REFRACT = 4./3.;
-const float OIL_REFRACT = 1.5;
-const float ETA = AIR_REFRACT / WATER_REFRACT;
-const float INV_ETA = WATER_REFRACT / AIR_REFRACT;
-
-// floor position matricies, relative to world space
-const vec3 floorNormal = vec3(0., 0., 1.);  // always upwards relative to world
-uniform vec3 floorPosition;
-uniform mat3 floorTextureMatrix; // world space -> floor texture space
-uniform float floorSize; // world space
-uniform float floorPixels;
-uniform sampler2D floorTexture;
-
-// skybox
-uniform samplerCube skyboxTex;
-
-// sun
-uniform vec3 sunDirection;
-uniform vec3 sunColor;
-
-// XYZ of the wave surface, row major
-uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
-uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
-uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
-uniform float waveBlending[FILTER_COUNT];
-uniform vec4 sunsetColorTable[SUNSET_COLOR_COUNT];
-uniform float hueOff;
-
-in vec2 v_wave_tex_uv[FILTER_COUNT];
-// in float v_wave_blending[FILTER_COUNT];
-in vec3 v_position; // world space
-in vec3 v_camera_normal;
-
-out vec4 color;
+#include "shared/shared_func.glsl"
 
 float linePlaneDistance(vec3 linePoint, vec3 lineSlope, vec3 planePoint, vec3 planeNormal) {
     return dot(planePoint - linePoint, planeNormal) / dot(lineSlope, planeNormal);
@@ -66,25 +24,9 @@ vec3 linePlaneIntersection(vec3 linePoint, vec3 lineSlope, vec3 planePoint, vec3
 // https://gpuopen.com/gdc-presentations/2019/gdc-2019-agtd6-interactive-water-simulation-in-atlas.pdf
 
 float fresnel(vec3 wi, vec3 wn, vec3 secMoments) {
-    const float R = pow(ETA - 1., 2.)/pow(ETA + 1., 2.);
+    const float R = pow(ETA - 1., 2.)/pow(ETA + 1., 2.); // TODO: not valid
     float alpha_v = sqrt(dot(secMoments.xy, wi.xy*wi.xy));
     return R + (1. - R)*pow(1. - dot(wi, wn), 5.*exp(-2.69*alpha_v)) / (1. + 22.7*pow(alpha_v, 1.5));
-}
-
-vec2 combineFirstMoments(vec2 moments[FILTER_COUNT]) {
-    return moments[0] + moments[1] + moments[2];
-}
-
-vec3 addSecondMoments(vec2 firstMomentLhs, vec3 secMomentsLhs, vec2 firstMomentRhs, vec3 secMomentsRhs) {
-    return vec3(
-        secMomentsLhs.xy + secMomentsRhs.xy + 2.*firstMomentLhs.xy*firstMomentRhs.xy,
-        secMomentsLhs.z + secMomentsRhs.z + firstMomentLhs.x*firstMomentRhs.y + firstMomentLhs.y*firstMomentRhs.x);
-}
-
-vec3 combineSecondMoments(vec2 moments[FILTER_COUNT], vec3 secMoments[FILTER_COUNT]) {
-    vec2 moments01 = moments[0] + moments[1];
-    vec3 secMoments01 = addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
-    return addSecondMoments(moments01, secMoments01, moments[2], secMoments[2]);
 }
 
 // TODO: environment map sampling using LEDAR maps for transmitted light
@@ -153,8 +95,7 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float lodOffset) {
 
     vec3 floorIntersect = v_position + d*wt;
     vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
-    // return textureProjLod(floorTexture, floorTex, lod).xyz;
-    return vec3(1., 0., 0.);
+    return textureProjLod(floorTexture, floorTex, lod).xyz;
 }
 
 vec3 sampleReflectLEADR(vec3 wi, vec3 wn, float lodOffset) {
@@ -170,113 +111,6 @@ vec3 sampleReflectLEADR(vec3 wi, vec3 wn, float lodOffset) {
     lod = max(lodMin, lod); // TODO: remove LOD clamp?
 
     return textureLod(skyboxTex, wr, lod).xyz;
-}
-
-vec3 SamuraiReflectionSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy) {
-    // const vec3 macronormal = vec3(0, 0, 1.);
-    const float steps = 8.;
-    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
-    vec3 wr = reflect(wi, wn);
-    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-    float lodOffset = -1.0 + log2(LEADR_SAMPLE_SIZE * (0.5 / 1.5) * max(sigma.x, sigma.y) * 2048.0);
-
-    float angle = abs(dot(-normalize(wr.yz), normalize(sunDirection.yz)));
-    angle = mix(angle, 0.8, clamp(sqrt(max(sigma.x, sigma.y)) * 0.01, 0., 1.));
-
-    vec3 color3 = vec3(0);
-#pragma unroll_loop_start
-    for (int i = 0; i < SUNSET_COLOR_COUNT; i++) {
-        color3 = color3 + sunsetColorTable[i].rgb*step(sunsetColorTable[i].a, angle);
-    }
-#pragma unroll_loop_end
-    return color3;
-}
-
-// All components are in the range [0…1], including hue.
-vec3 hsv2rgb(vec3 c)
-{
-    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-}
-
-vec3 HueWheelSampling(vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy, float off) {
-    // const vec3 macronormal = vec3(0, 0, 1.);
-    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
-    vec3 wr = reflect(wi, wn);
-    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-
-    float angle = clamp(abs(dot(-normalize(wr.yz), normalize(sunDirection.yz))), 0., 1.);
-    angle = mix(angle, 0.8, clamp(sqrt(max(sigma.x, sigma.y)) * 0.5, 0., 1.));
-    angle = fract(angle + off);
-
-    // float sigmaTerm = 1. - clamp(sqrt(max(sigma.x, sigma.y))*0.5, 0., 0.5);
-    return hsv2rgb(vec3(clamp(angle, 0., 1.), 1., 1.));
-}
-
-// https://www.shadertoy.com/view/ls2Bz1
-float saturate (float x)
-{
-    return clamp(x, 0., 1.);
-}
-vec3 saturate (vec3 x)
-{
-    return clamp(x, 0., 1.);
-}
-
-vec3 bump3y (vec3 x, vec3 yoffset)
-{
-	vec3 y = vec3(1.,1.,1.) - x * x;
-	y = saturate(y-yoffset);
-	return y;
-}
-
-vec3 spectral_zucconi6 (float w)
-{
-	// w: [400, 700]
-	// x: [0,   1]
-	float x = saturate((w - 400.0)/ 300.0);
-
-	const vec3 c1 = vec3(3.54585104, 2.93225262, 2.41593945);
-	const vec3 x1 = vec3(0.69549072, 0.49228336, 0.27699880);
-	const vec3 y1 = vec3(0.02312639, 0.15225084, 0.52607955);
-
-	const vec3 c2 = vec3(3.90307140, 3.21182957, 3.96587128);
-	const vec3 x2 = vec3(0.11748627, 0.86755042, 0.66077860);
-	const vec3 y2 = vec3(0.84897130, 0.88445281, 0.73949448);
-
-	return
-		bump3y(c1 * (x - x1), y1) +
-		bump3y(c2 * (x - x2), y2) ;
-}
-
-float smoothstep_spectral(float w) {
-    return smoothstep(300., 400., w)*(1. - smoothstep(700., 800., w));
-}
-
-vec3 sample_slick(float w) {
-    return spectral_zucconi6(w)*smoothstep_spectral(w);
-}
-
-vec3 OilSlickSampling(vec3 position, vec3 wi, vec2 firstMoments, vec3 secMoments, float cxy, float off) {
-    vec2 sigma = sqrt(abs(secMoments.xy - firstMoments.xy*firstMoments.xy));
-    float oil_thickness = max(sigma.x, sigma.y)*500. + 100.;
-    // float oil_thickness = position.z*1000. + 200.;  // + max(sigma.x, sigma.y)*400.;
-    // float oil_thickness = 200.;
-
-    vec3 wn = normalize(vec3(-firstMoments.xy, 1.));
-    vec3 wp = refract(wi, wn, AIR_REFRACT / OIL_REFRACT);
-    float lambda_base = 2.*OIL_REFRACT*oil_thickness*abs(dot(wp, wn));
-
-    vec3 color3 = vec3(0);
-
-#pragma unroll_loop_start
-    for (int i = 0; i < 4; i++) {
-        color3 = color3 + sample_slick(lambda_base / float(UNROLLED_LOOP_INDEX));
-    }
-#pragma unroll_loop_end
-
-    return color3;
 }
 
 // TODO: environment map sampling using LEDAR maps for transmitted light
@@ -383,37 +217,20 @@ vec3 LEADRSpecular(vec3 wi, vec2 firstMoments, vec3 secMoments, float c_xy) {
 }
 
 void main() {
-    // TODO: should I compute an LOD for these lookups?
-    vec2 firstMomentsList[FILTER_COUNT] = vec2[FILTER_COUNT](
-        waveBlending[0]*texture(waveMoments[0], v_wave_tex_uv[0]).xy,
-        waveBlending[1]*texture(waveMoments[1], v_wave_tex_uv[1]).xy,
-        waveBlending[2]*texture(waveMoments[2], v_wave_tex_uv[2]).xy
-    );
-    vec3 secMomentsList[FILTER_COUNT] = vec3[FILTER_COUNT](
-        waveBlending[0]*texture(waveSecMoments[0], v_wave_tex_uv[0]).xyz,
-        waveBlending[1]*texture(waveSecMoments[1], v_wave_tex_uv[1]).xyz,
-        waveBlending[2]*texture(waveSecMoments[2], v_wave_tex_uv[2]).xyz
-    );
-
-    vec2 firstMoments = combineFirstMoments(firstMomentsList);
-    vec3 secMoments = combineSecondMoments(firstMomentsList, secMomentsList);
-    float cxy = secMoments.z - firstMoments.x*firstMoments.y;
+    #include "shared/compute_moments.glsl"
 
     // rays are shot from the camera into a light or the great beyond
     // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
 
     // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
     // color = vec4(, 1.);
-    vec3 ledar3 = LEADREnvironmentMapSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    // vec3 samurai3 = SamuraiReflectionSampling(v_camera_normal, firstMoments, secMoments, cxy);
-    // vec3 hue3 = HueWheelSampling(v_camera_normal, firstMoments, secMoments, cxy, hueOff);
-    // vec3 slick3 = OilSlickSampling(v_position, v_camera_normal, firstMoments, secMoments, cxy, hueOff);
 
-    vec3 color3 = ledar3;
+    vec3 color3 = LEADREnvironmentMapSampling(camera_normal, firstMoments, secMoments, cxy);
 
-    vec2 positive = smoothstep(-0.8, 0.8, v_position.xy);
-    vec2 negative = 1. - positive;
-    // vec3 color3 = ledar3*positive.x*positive.y + samurai3*negative.x*positive.y + hue3*negative.x*negative.y + slick3*positive.x*negative.y;
+    // vec2 positive = smoothstep(-0.8, 0.8, v_position.xy);
+    // vec2 negative = 1. - positive;
+    // vec3 color3 = ledar3*negative.y*negative.y;
+    // vec3 color3 = hue3;
 
     // the closer we are to the camera in the y plane, the darker the color should be to mimic sunset vibes
     // color3 = color3 * smoothstep(0.8, 1., gl_FragCoord.z);

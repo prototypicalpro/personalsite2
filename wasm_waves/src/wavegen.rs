@@ -256,6 +256,8 @@ impl WaveGen {
         }
 
         let (omega, domega_dk) = self.capilary_dispersion(k_mag);
+        // assert!(omega >= 0.0 && omega.is_finite());
+        // assert!(domega_dk >= 0.0 && domega_dk.is_finite());
 
         let change_term = dk.powi(2)*domega_dk / k_mag;
         
@@ -289,11 +291,10 @@ impl WaveGen {
                 let y_rev = if y <= WIDTH / 2 { y as isize } else { y as isize - WIDTH as isize };
                 let ki = (x as f32) * TAU / domain;
                 let kj = (y_rev as f32) * TAU / domain;
-                
                 let rki = ki*self.rotation_matrix.0 - kj*self.rotation_matrix.1;
                 let rkj = ki*self.rotation_matrix.1 + kj*self.rotation_matrix.0;
 
-                ((rki, rki), rki.hypot(rkj), i)
+                ((rki, rkj), rki.hypot(rkj), i)
             })
     }
     
@@ -316,9 +317,7 @@ impl WaveGen {
                 let bkwd = Complex32::from_polar(1.0, omega_t);
                 let fwd = bkwd.conj();
                 
-                let ret = w.pos_spec*fwd + w.neg_spec*bkwd;
-                // assert!(ret.is_finite());
-                ret
+                w.pos_spec*fwd + w.neg_spec*bkwd
             })
             .zip_eq(out_buffer.iter_mut())
             .for_each(|(res, elem)| *elem = res);
@@ -351,10 +350,7 @@ impl WaveGen {
                     .map(|(h, ((kx, ky), k_mag, _))| {
                         if k_mag != 0.0 
                         { 
-                            let ret = [mapfunc0(&h, kx, ky, k_mag), mapfunc1(&h, kx, ky, k_mag)];
-                            // assert!(ret[0].is_finite());
-                            // assert!(ret[1].is_finite());
-                            ret
+                            [mapfunc0(&h, kx, ky, k_mag), mapfunc1(&h, kx, ky, k_mag)]
                         } else { 
                             [Complex32::zero(), Complex32::zero()]
                         }
@@ -598,7 +594,5 @@ impl WaveGen {
             .zip_eq(self.filters.iter())
             .for_each(|((wavebuf, outbuf), filter)|
                 self.step_one(time, filter, wavebuf, outbuf));
-
-        // assert!(output_buffer.iter().all(|f| f.iter().all(|j| j.iter().all(|k| k.is_finite()))));
     }
 }

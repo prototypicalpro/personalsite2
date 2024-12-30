@@ -31,7 +31,6 @@ uniform float waveBlending[FILTER_COUNT];
 out vec2 v_wave_tex_uv[FILTER_COUNT]; // texture coordinates for each filtering grain
 // out float v_wave_blending[FILTER_COUNT]; // blending factor to use for each cascade, helps filter tiling
 out vec3 v_position; // position in world space
-out vec3 v_camera_normal; // normal of the camera in world space
 
 vec3 proj(vec4 a) {
     return a.xyz / a.w;
@@ -41,7 +40,7 @@ void main() {
     // set GL position based on the provided matricies
     // v_position = proj(modelMatrix*vec4(position.xyz, 1.0));
     vec3 positionTmp = position.xyz;
-    float camera_distance_approx = distance(proj(modelMatrix*vec4(positionTmp, 1.)), cameraPosition);
+    // float camera_distance_approx = distance(proj(modelMatrix*vec4(positionTmp, 1.)), cameraPosition);
 
     // i < FILTER_COUNT
     vec3 waveTexCoords;
@@ -49,19 +48,12 @@ void main() {
 #pragma unroll_loop_start
     for (int i = 0; i < 3; i++) {
         scale = domain * waveTextureMatrix[i][0][0];
-        // v_wave_blending[i] = 1.; // UNROLLED_LOOP_INDEX < 1 ? 0. : 1.;
 
         waveTexCoords = waveTextureMatrix[i]*vec3(position.xy, 1.0);
         v_wave_tex_uv[i] = waveTexCoords.xy / waveTexCoords.z;
         positionTmp += waveBlending[i]*texture(waveDisplacement[UNROLLED_LOOP_INDEX], v_wave_tex_uv[i]).xyz;
     }
 #pragma unroll_loop_end
-
-    // waveTexCoords = waveTextureMatrix[2]*vec3(position.xy, 1.0);
-    // v_wave_tex_uv[2] = waveTexCoords.xy / waveTexCoords.z;
-    // positionTmp += texture(waveDisplacement[2], v_wave_tex_uv[2]).xyz;
-
     v_position = proj(modelMatrix*vec4(positionTmp, 1.));
 	gl_Position = projectionMatrix*modelViewMatrix*vec4(positionTmp, 1.);
-    v_camera_normal = normalize(v_position - cameraPosition);
 }

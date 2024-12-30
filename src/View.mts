@@ -11,8 +11,11 @@ import {
 } from "./wasm_constants.mjs";
 import MakeTex from "./MakeTex.mjs";
 
-import raytraceVert from "./glsl/raytrace.vert.glsl";
-import raytraceFrag from "./glsl/raytrace.frag.glsl";
+import oceanVert from "./glsl/ocean_surface/ocean.vert.glsl";
+import hueFrag from './glsl/ocean_surface/huewheel.frag.glsl';
+import leadrFrag from './glsl/ocean_surface/leadr.frag.glsl';
+import oilslickFrag from './glsl/ocean_surface/oilslick.frag.glsl';
+import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
 // import Tex from "./img/tex.jpg";
@@ -39,12 +42,12 @@ export default class View {
             number,
         ],
         blending: [0, 0.6, 1],
-        timeScale: 1,
-        segments: 256,
-        depth: 100000,
+        timeScale: 0.5,
+        segments: 64,
+        depth: 5,
         visualDepth: 2,
-        wind_speed: 10,
-        fetch: 1500,
+        wind_speed: 5,
+        fetch: 1000,
         damping: 3.3,
         swell: 0.8,
         rad_off: -60 * Math.PI / 180,
@@ -55,14 +58,53 @@ export default class View {
 
     static readonly sunDirection = new THREE.Vector3(0, -12, -1).normalize();
     static readonly sunColorTable = [
-        //{ color: new THREE.Color(0xC70039), thresh: 0.0 },
-        { color: new THREE.Color(0xFF4500), thresh: 0.0 },
-        { color: new THREE.Color(0xFF6347), thresh: 0.9 },
-        { color: new THREE.Color(0xFF8C00), thresh: 0.93 },
+        { color: new THREE.Color(0xC70039), thresh: 0.0 },
+        { color: new THREE.Color(0xFF4500), thresh: 0.7 },
+        { color: new THREE.Color(0xFF6347), thresh: 0.8 },
+        { color: new THREE.Color(0xFF8C00), thresh: 0.9 },
         { color: new THREE.Color(0xFFA500), thresh: 0.99 },
-        // { color: new THREE.Color(0xFFD700), thresh: 0.97 },
+        { color: new THREE.Color(0xFFD700), thresh: 0.999 },
         // { color: new THREE.Color(0xb200ff), thresh: 0.995 },
     ];
+
+    static readonly waveTiles: Array<{ position: [number, number], shader: Partial<THREE.ShaderMaterialParameters> }> = [
+        {
+            position: [-0.25*View.getDomain(), -0.25*View.getDomain()],
+            shader: {
+                uniforms: {
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                },
+                fragmentShader: stripHeader(leadrFrag)
+            }
+        },
+        {
+            position: [0.25*View.getDomain(), -0.25*View.getDomain()],
+            shader: {
+                uniforms: {
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                },
+                fragmentShader: stripHeader(oilslickFrag),
+            }
+        },
+        {
+            position: [-0.25*View.getDomain(), 0.25*View.getDomain()],
+            shader: {
+                uniforms: {
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                },
+                fragmentShader: stripHeader(hueFrag),
+            }
+        },
+        {
+            position: [0.25*View.getDomain(), 0.25*View.getDomain()],
+            shader: {
+                uniforms: {
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                },
+                fragmentShader: stripHeader(toonFrag)
+            }
+        }
+    ]
 
     hueOff: THREE.Uniform = new THREE.Uniform(0);
     wasmWaves: WorkerHandlers;
@@ -73,7 +115,7 @@ export default class View {
     wavePartialBufs: THREE.BufferAttribute[];
 
     oceanGeo: THREE.PlaneGeometry;
-    oceanMesh: THREE.Mesh;
+    oceanMeshList: THREE.Mesh[] = [];
     controls: OrbitControls;
 
     private debugRenderTarget: THREE.WebGLRenderTarget;
@@ -137,24 +179,31 @@ export default class View {
         this.scene.background = cubeTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
-            View.waveProps.windows[5],
-            View.waveProps.windows[5],
+            View.getDomain() / 2,
+            View.getDomain() / 2,
             View.waveProps.segments,
             View.waveProps.segments,
         );
 
-        const shaderMaterial = new THREE.ShaderMaterial({
-            glslVersion: THREE.GLSL3,
-            fragmentShader: stripHeader(raytraceFrag),
-            vertexShader: stripHeader(raytraceVert),
-            uniforms: this.makeRaytraceUniforms(),
-            defines: this.makeRaytraceDefines(),
-        });
+        const uniformsBase = this.makeRaytraceUniforms();
+        const definesBase = this.makeRaytraceDefines();
+        for (const params of View.waveTiles) {
+            const shaderMaterial = new THREE.ShaderMaterial({
+                glslVersion: THREE.GLSL3,
+                vertexShader: stripHeader(oceanVert),
+                ...params.shader,
+                uniforms: {...uniformsBase, ...params.shader.uniforms},
+                defines: {...definesBase, ...params.shader.defines},
+            });
+            const mesh = new THREE.Mesh(this.oceanGeo, shaderMaterial);
+            mesh.position.set(...params.position, 0);
 
-        this.oceanMesh = new THREE.Mesh(this.oceanGeo, shaderMaterial);
-        this.scene.add(this.oceanMesh);
+            this.oceanMeshList.push(mesh);
+        }
 
-        this.debugRenderTarget = makeRenderTarget(WIDTH, WIDTH, 4);
+        this.scene.add(...this.oceanMeshList);
+
+        // this.debugRenderTarget = makeRenderTarget(WIDTH, WIDTH, 4);
 
         // dudv map
         // fresnel reflection
@@ -188,6 +237,28 @@ export default class View {
         return new View(canvasElem, tex, cubeTex, worker, wasmWavesMem, ptrs);
     }
 
+    private static makeUvTransform(domainFrac: number, offset: [number, number]) {
+        const waveTextureMatrix = [];
+        for (let i = 0; i < FILTER_COUNT; i++) {
+            const tile_off = View.waveProps.tiling_off*Math.pow(10, -i);
+            const child_domain = View.waveProps.windows[i * 2 + 1];
+            waveTextureMatrix.push(new THREE.Matrix3().setUvTransform(
+                offset[0] + tile_off,
+                offset[1] + tile_off,
+                domainFrac / child_domain,
+                -domainFrac / child_domain,
+                0,
+                0,
+                0,
+            ));
+        }
+        return waveTextureMatrix;
+    }
+
+    static getDomain() {
+        return View.waveProps.windows[View.waveProps.windows.length - 1];
+    }
+
     private makeRaytraceDefines() {
         const { LeadrSampleCount, LeadrSampleSize } = View.waveProps;
 
@@ -212,22 +283,7 @@ export default class View {
     }
 
     private makeRaytraceUniforms() {
-        const { tiling_off, windows, blending } = View.waveProps;
-        const waveTextureMatrix = [];
-        for (let i = 0; i < FILTER_COUNT; i++) {
-            const child_domain = View.waveProps.windows[i * 2 + 1];
-
-            const mat = new THREE.Matrix3().setUvTransform(
-                0.5,
-                0.5,
-                1 / child_domain,
-                -1 / child_domain,
-                0,
-                tiling_off, // TODO: offset
-                tiling_off,
-            );
-            waveTextureMatrix.push(mat);
-        }
+        const { windows, blending } = View.waveProps;
 
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
             0.5,
@@ -258,7 +314,6 @@ export default class View {
             waveSecMoments: new THREE.Uniform(
                 this.makeTex.getSecondMomentTexs(),
             ),
-            waveTextureMatrix: new THREE.Uniform(waveTextureMatrix),
             domain: new THREE.Uniform(View.waveProps.windows[5]),
             floorPosition: new THREE.Uniform(
                 new THREE.Vector3(0, 0, -View.waveProps.visualDepth),
