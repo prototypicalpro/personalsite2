@@ -19,17 +19,18 @@ import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
 
 // import Tex from "./img/debug.jpg";
 // import Tex from "./img/tex.jpg";
-import Tex from "./img/shapes.jpg";
+// import Tex from "./img/shapes.jpg";
 // import Tex from "./img/e.png";
 // import Tex from "./img/space.jpg";
 // import Tex from "./img/stars.jpg";
+import Tex from './img/logos.png';
 import im00 from "./img/skybox/im00.png";
 import im01 from "./img/skybox/im01.png";
 import im02 from "./img/skybox/im02.png";
 import im10 from "./img/skybox/im10.png";
 import im11 from "./img/skybox/im11.png";
 import im12 from "./img/skybox/im12.png";
-import MakeSkybox from "./MakeSkybox.mjs";
+// import MakeSkybox from "./MakeSkybox.mjs";
 
 export default class View {
     static readonly waveProps = {
@@ -43,21 +44,22 @@ export default class View {
         ],
         blending: [0, 0.6, 1],
         timeScale: 0.5,
-        segments: 64,
-        depth: 5,
+        segments: 128,
+        depth: 100,
         visualDepth: 2,
         wind_speed: 5,
-        fetch: 1000,
+        fetch: 2000,
         damping: 3.3,
-        swell: 0.8,
+        swell: 0.7,
         rad_off: -60 * Math.PI / 180,
         tiling_off: 0.1,
-        LeadrSampleCount: 3,
+        LeadrSampleCount: 6,
         LeadrSampleSize: 1.8,
     };
 
-    static readonly sunDirection = new THREE.Vector3(0, -12, -1).normalize();
-    static readonly sunColorTable = [
+    static readonly sunDirection = new THREE.Vector3(-2, 0, -1).normalize();
+    static readonly sunColor = new THREE.Color(1., 0.8, 0.9);
+    static readonly toonColorTable = [
         { color: new THREE.Color(0xC70039), thresh: 0.0 },
         { color: new THREE.Color(0xFF4500), thresh: 0.7 },
         { color: new THREE.Color(0xFF6347), thresh: 0.8 },
@@ -72,7 +74,7 @@ export default class View {
             position: [-0.25*View.getDomain(), -0.25*View.getDomain()],
             shader: {
                 uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
                 },
                 fragmentShader: stripHeader(leadrFrag)
             }
@@ -81,7 +83,7 @@ export default class View {
             position: [0.25*View.getDomain(), -0.25*View.getDomain()],
             shader: {
                 uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
                 },
                 fragmentShader: stripHeader(oilslickFrag),
             }
@@ -90,7 +92,7 @@ export default class View {
             position: [-0.25*View.getDomain(), 0.25*View.getDomain()],
             shader: {
                 uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
                 },
                 fragmentShader: stripHeader(hueFrag),
             }
@@ -99,7 +101,7 @@ export default class View {
             position: [0.25*View.getDomain(), 0.25*View.getDomain()],
             shader: {
                 uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform(1.0, [0.5, 0.5])),
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
                 },
                 fragmentShader: stripHeader(toonFrag)
             }
@@ -118,15 +120,15 @@ export default class View {
     oceanMeshList: THREE.Mesh[] = [];
     controls: OrbitControls;
 
-    private debugRenderTarget: THREE.WebGLRenderTarget;
-
     makeTex: MakeTex;
     private posPtr: number;
     private partPtr: number;
 
     backTex: THREE.Texture;
 
-    makeSkybox: MakeSkybox;
+    // makeSkybox: MakeSkybox;
+
+    private renderWavesPromise: Promise<void> = Promise.resolve();
 
     constructor(
         canvasElem: HTMLCanvasElement,
@@ -160,7 +162,7 @@ export default class View {
 
         this.camera = new THREE.PerspectiveCamera(50, 1, 0.2, 10000);
         
-        this.makeSkybox = new MakeSkybox(View.sunDirection);
+        // this.makeSkybox = new MakeSkybox(View.sunDirection);
 
         this.scene = new THREE.Scene();
 
@@ -176,7 +178,7 @@ export default class View {
         this.backTex.minFilter = THREE.LinearMipMapNearestFilter;
 
         // this.scene.background = this.makeSkybox.renderTarget.texture;
-        this.scene.background = cubeTex;
+        // this.scene.background = cubeTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
             View.getDomain() / 2,
@@ -237,7 +239,7 @@ export default class View {
         return new View(canvasElem, tex, cubeTex, worker, wasmWavesMem, ptrs);
     }
 
-    private static makeUvTransform(domainFrac: number, offset: [number, number]) {
+    private static makeUvTransform(domainFrac: [number, number], offset: [number, number]) {
         const waveTextureMatrix = [];
         for (let i = 0; i < FILTER_COUNT; i++) {
             const tile_off = View.waveProps.tiling_off*Math.pow(10, -i);
@@ -245,8 +247,8 @@ export default class View {
             waveTextureMatrix.push(new THREE.Matrix3().setUvTransform(
                 offset[0] + tile_off,
                 offset[1] + tile_off,
-                domainFrac / child_domain,
-                -domainFrac / child_domain,
+                domainFrac[0]*2 / child_domain,
+                domainFrac[1]*2 / child_domain,
                 0,
                 0,
                 0,
@@ -278,7 +280,7 @@ export default class View {
             LEADR_SAMPLE_COUNT: LeadrSampleCount,
             LEADR_SAMPLE_SIZE: LeadrSampleSize.toPrecision(21),
             LEADR_WEIGHTS: preinitVals.join(", "),
-            SUNSET_COLOR_COUNT: View.sunColorTable.length
+            SUNSET_COLOR_COUNT: View.toonColorTable.length
         };
     }
 
@@ -286,16 +288,16 @@ export default class View {
         const { windows, blending } = View.waveProps;
 
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
-            0.5,
-            0.5,
-            1 / windows[5],
-            1 / windows[5],
+            0.25,
+            0.25,
+            2 / View.getDomain(),
+            2 / View.getDomain(),
             0,
             0,
             0,
         );
 
-        const colorTable = View.sunColorTable.map((c, i, table) => {
+        const colorTable = View.toonColorTable.map((c, i, table) => {
             const colorPacked = new THREE.Vector4(c.color.r, c.color.g, c.color.b, c.thresh);
             if (i > 0) {
                 const last = table[i - 1];
@@ -324,6 +326,7 @@ export default class View {
             floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
             sunsetColorTable: new THREE.Uniform(colorTable),
+            sunColor: new THREE.Uniform(View.sunColor),
             // skyboxTex: new THREE.Uniform(this.makeSkybox.renderTarget.texture),
             skyboxTex: new THREE.Uniform(this.scene.background),
             waveBlending: new THREE.Uniform(blending),
@@ -348,11 +351,14 @@ export default class View {
     public async update(secs: number, updateWaves: boolean = true) {
         // this.makeSkybox.render(this.renderer, secs);
         if (updateWaves) {
-            this.wasmWaves.render({ time: secs * View.waveProps.timeScale });
+            await this.renderWavesPromise;
             this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
             this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
-            this.makeTex.render(this.renderer);
 
+            this.renderWavesPromise = this.renderWavesPromise.then(() => 
+                this.wasmWaves.render({ time: secs * View.waveProps.timeScale }));
+            
+            this.makeTex.render(this.renderer);
             this.hueOff.value += 0.001;
         }
 

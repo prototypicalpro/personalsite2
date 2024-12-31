@@ -55,7 +55,7 @@ export default class MakeTex {
             () =>
                 new THREE.WebGLMultipleRenderTargets(WIDTH, WIDTH, 3, {
                     magFilter: THREE.LinearFilter,
-                    minFilter: THREE.LinearMipmapLinearFilter,
+                    minFilter: THREE.NearestFilter,
                     depthBuffer: false,
                     stencilBuffer: false,
                     type: THREE.FloatType,

@@ -4,6 +4,8 @@
 #define SUNSET_COLOR_COUNT 1
 #define UNROLLED_LOOP_INDEX 0
 
+#define cameraPosition vec3(0)
+
 // all code above this line removed at runtime
 #pragma end_pre_strip
 
@@ -47,9 +49,9 @@ void main() {
     // the closer we are to the camera in the y plane, the darker the color should be to mimic sunset vibes
     // color3 = color3 * smoothstep(0.8, 1., gl_FragCoord.z);
 
-    // vec3 spec3 = 0.3*LEADRSpecular(v_camera_normal, firstMoments, secMoments, cxy);
-    // color = vec4(color3 + spec3, 1.);
-    color = vec4(color3, 1.);
+    vec3 spec3 = sunColor*LEADRSpecular(camera_normal, firstMoments, secMoments, cxy);
+    color = vec4(color3 + spec3, 1.);
+    // color = vec4(color3, 1.);
 
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);
