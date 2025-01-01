@@ -21,9 +21,10 @@ import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
 // import Tex from "./img/tex.jpg";
 // import Tex from "./img/shapes.jpg";
 // import Tex from "./img/e.png";
-// import Tex from "./img/space.jpg";
+import Tex from "./img/space.jpg";
+// import Tex from "./img/space2.jpg";
 // import Tex from "./img/stars.jpg";
-import Tex from './img/logos.png';
+// import Tex from './img/logos.png';
 import im00 from "./img/skybox/im00.png";
 import im01 from "./img/skybox/im01.png";
 import im02 from "./img/skybox/im02.png";
@@ -46,64 +47,77 @@ export default class View {
         timeScale: 0.5,
         segments: 128,
         depth: 100,
-        visualDepth: 2,
+        visualDepth: 1,
         wind_speed: 5,
         fetch: 2000,
         damping: 3.3,
         swell: 0.7,
         rad_off: -60 * Math.PI / 180,
         tiling_off: 0.1,
-        LeadrSampleCount: 6,
+        LeadrSampleCount: 3,
         LeadrSampleSize: 1.8,
     };
 
     static readonly sunDirection = new THREE.Vector3(-2, 0, -1).normalize();
     static readonly sunColor = new THREE.Color(1., 0.8, 0.9);
     static readonly toonColorTable = [
-        { color: new THREE.Color(0xC70039), thresh: 0.0 },
-        { color: new THREE.Color(0xFF4500), thresh: 0.7 },
-        { color: new THREE.Color(0xFF6347), thresh: 0.8 },
-        { color: new THREE.Color(0xFF8C00), thresh: 0.9 },
-        { color: new THREE.Color(0xFFA500), thresh: 0.99 },
-        { color: new THREE.Color(0xFFD700), thresh: 0.999 },
-        // { color: new THREE.Color(0xb200ff), thresh: 0.995 },
+        // { color: new THREE.Color(0xC70039), thresh: 0.0 },
+        // { color: new THREE.Color(0xFF4500), thresh: 0.7 },
+        // { color: new THREE.Color(0xFF6347), thresh: 0.8 },
+        // { color: new THREE.Color(0xFF8C00), thresh: 0.9 },
+        // { color: new THREE.Color(0xFFA500), thresh: 0.99 },
+        // { color: new THREE.Color(0xFFD700), thresh: 0.999 },
+
+        // { color: new THREE.Color(0xFFFFFF), thresh: 0.0 },
+        // { color: new THREE.Color(0x0d0221), thresh: 0.7 },
+        // { color: new THREE.Color(0x261447), thresh: 0.8 },
+        // { color: new THREE.Color(0xff3864), thresh: 0.9 },
+        // { color: new THREE.Color(0xff6c11), thresh: 0.99 },
+        // { color: new THREE.Color(0x2de2e6), thresh: 0.999 },
+
+        // { color: new THREE.Color(0x000000), thresh: 0.0 },
+        { color: new THREE.Color(0x0d0221), thresh: 0.0 },
+        { color: new THREE.Color(0x261447), thresh: 0.7 },
+        { color: new THREE.Color(0x2de2e6), thresh: 0.99 },
+        //  { color: new THREE.Color(0xff6c11), thresh: 0.995 },
+        // { color: new THREE.Color(0xff3864), thresh: 0.999 },
     ];
 
     static readonly waveTiles: Array<{ position: [number, number], shader: Partial<THREE.ShaderMaterialParameters> }> = [
+        // {
+        //     position: [-0.25*View.getDomain(), -0.25*View.getDomain()],
+        //     shader: {
+        //         uniforms: {
+        //             waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
+        //         },
+        //         fragmentShader: stripHeader(leadrFrag)
+        //     }
+        // },
+        // {
+        //     position: [0.25*View.getDomain(), -0.25*View.getDomain()],
+        //     shader: {
+        //         uniforms: {
+        //             waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
+        //         },
+        //         fragmentShader: stripHeader(toonFrag),
+        //     }
+        // },
+        // {
+        //     position: [-0.25*View.getDomain(), 0.25*View.getDomain()],
+        //     shader: {
+        //         uniforms: {
+        //             waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
+        //         },
+        //         fragmentShader: stripHeader(hueFrag),
+        //     }
+        // },
         {
-            position: [-0.25*View.getDomain(), -0.25*View.getDomain()],
+            position: [0, 0],
             shader: {
                 uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
+                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [1, 1])),
                 },
-                fragmentShader: stripHeader(leadrFrag)
-            }
-        },
-        {
-            position: [0.25*View.getDomain(), -0.25*View.getDomain()],
-            shader: {
-                uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
-                },
-                fragmentShader: stripHeader(oilslickFrag),
-            }
-        },
-        {
-            position: [-0.25*View.getDomain(), 0.25*View.getDomain()],
-            shader: {
-                uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
-                },
-                fragmentShader: stripHeader(hueFrag),
-            }
-        },
-        {
-            position: [0.25*View.getDomain(), 0.25*View.getDomain()],
-            shader: {
-                uniforms: {
-                    waveTextureMatrix: new THREE.Uniform(View.makeUvTransform([1, -1], [0.5, 0.5])),
-                },
-                fragmentShader: stripHeader(toonFrag)
+                fragmentShader: stripHeader(oilslickFrag)
             }
         }
     ]
@@ -167,7 +181,7 @@ export default class View {
         this.scene = new THREE.Scene();
 
         this.controls = new OrbitControls(this.camera, canvasElem);
-        this.camera.position.set(0, -8, 1);
+        this.camera.position.set(0, 0, 9);
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
@@ -175,14 +189,14 @@ export default class View {
         this.backTex.wrapS = THREE.RepeatWrapping;
         this.backTex.wrapT = THREE.RepeatWrapping;
         this.backTex.magFilter = THREE.LinearFilter;
-        this.backTex.minFilter = THREE.LinearMipMapNearestFilter;
+        this.backTex.minFilter = THREE.LinearMipMapLinearFilter;
 
         // this.scene.background = this.makeSkybox.renderTarget.texture;
         // this.scene.background = cubeTex;
 
         this.oceanGeo = new THREE.PlaneGeometry(
-            View.getDomain() / 2,
-            View.getDomain() / 2,
+            View.getDomain(),
+            View.getDomain(),
             View.waveProps.segments,
             View.waveProps.segments,
         );
@@ -247,8 +261,8 @@ export default class View {
             waveTextureMatrix.push(new THREE.Matrix3().setUvTransform(
                 offset[0] + tile_off,
                 offset[1] + tile_off,
-                domainFrac[0]*2 / child_domain,
-                domainFrac[1]*2 / child_domain,
+                domainFrac[0] / child_domain,
+                domainFrac[1] / child_domain,
                 0,
                 0,
                 0,
@@ -288,10 +302,10 @@ export default class View {
         const { windows, blending } = View.waveProps;
 
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
-            0.25,
-            0.25,
-            2 / View.getDomain(),
-            2 / View.getDomain(),
+            0.5,
+            0.5,
+            1 / View.getDomain(),
+            1 / View.getDomain(),
             0,
             0,
             0,

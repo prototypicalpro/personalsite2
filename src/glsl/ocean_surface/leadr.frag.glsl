@@ -180,9 +180,9 @@ void main() {
     // the closer we are to the camera in the y plane, the darker the color should be to mimic sunset vibes
     // color3 = color3 * smoothstep(0.8, 1., gl_FragCoord.z);
 
-    // vec3 spec3 = sunColor*LEADRSpecular(camera_normal, firstMoments, secMoments, cxy);
-    // color = vec4(color3 + spec3, 1.);
-    color = vec4(color3, 1.);
+    vec3 spec3 = sunColor*LEADRSpecular(camera_normal, firstMoments, secMoments, cxy);
+    color = vec4(color3 + spec3, 1.);
+    // color = vec4(color3, 1.);
 
     // color = vec4(0., 0., (v_position.z)*4., 1.);
     // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);
