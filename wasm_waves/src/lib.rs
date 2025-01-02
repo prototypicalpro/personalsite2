@@ -1,11 +1,9 @@
 #![feature(new_uninit)]
 
-use wasm_bindgen::{prelude::*};
 extern crate console_error_panic_hook;
-// use rayon::prelude::*;
-// pub use wasm_bindgen_rayon::init_thread_pool;
-use itertools::{Itertools, izip};
-use web_sys::console;
+
+use wasm_bindgen::{prelude::*};
+use itertools::Itertools;
 use std::arch::wasm32::*;
 use std::{pin::Pin, convert::TryFrom};
 
@@ -14,14 +12,11 @@ mod wavegen;
 mod gamma;
 pub mod simd;
 
-use wavegen::{WaveGen, OceanProp, SIZE, FILTER_COUNT, WaveWindow, WaveGenOutput, FACTOR_COUNT, WaveBuffers, HALF_FACTOR_COUNT, HALF_SIZE};
-use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
+use wavegen::{WaveGen, SIZE, FILTER_COUNT, WaveGenOutput, WaveBuffers, HALF_FACTOR_COUNT, HALF_SIZE};
+use crate::simd::{WasmSimdNum};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-// #[global_allocator]
-// static GLOBAL_ALLOCATOR: WasmTracingAllocator<System> = WasmTracingAllocator(System);
 
 const PACKED_SIZE: usize = SIZE*4;
 
@@ -120,20 +115,6 @@ pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
         .zip_eq(partial_out.iter_mut())
         .for_each(|((fft_slice, pos), partial)| 
             pack_result(fft_slice, pos, partial));
-
-    // let normalize = |c: f32| ((c + 2.0) / 4.0 * 255.0).clamp(0.0, 255.0) as u8;
-    // let pix_out: Vec<u8> = fft_out[0]
-    //     .par_iter()
-    //     .zip_eq(&*fft_out[1])
-    //     .zip_eq(&*fft_out[2])
-    //     .flat_map_iter(|((h, x), y)| [normalize(h.clone()), /* normalize(x.0), normalize(y.0) */ 0_u8, 0_u8, 255_u8])
-    //     .collect();
-    
-    // let minmax = pos_out.as_slice().into_iter().map(|c| c[0]).minmax().into_option().unwrap();
-    // web_sys::console::log_2(&minmax.0.to_string().into(), &minmax.1.to_string().into());
     
     web_sys::console::time_end_with_label(&"height_field");
-
-    // Clamped(pix_out)
-    // ret
 }
