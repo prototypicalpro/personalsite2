@@ -37,10 +37,7 @@ vec3 proj(vec4 a) {
 }
 
 void main() {
-    // set GL position based on the provided matricies
-    // v_position = proj(modelMatrix*vec4(position.xyz, 1.0));
     vec3 positionTmp = position.xyz;
-    // float camera_distance_approx = distance(proj(modelMatrix*vec4(positionTmp, 1.)), cameraPosition);
 
     // i < FILTER_COUNT
     vec3 waveTexCoords;

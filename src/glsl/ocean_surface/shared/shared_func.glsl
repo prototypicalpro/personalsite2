@@ -31,8 +31,8 @@ uniform sampler2D waveDisplacement[FILTER_COUNT]; // (dx, dy, dz, dxy)
 uniform sampler2D waveMoments[FILTER_COUNT]; // (slopex, slopey)
 uniform sampler2D waveSecMoments[FILTER_COUNT]; // (slopex*slopex, slopey*slopey, slopex*slopey)
 uniform float waveBlending[FILTER_COUNT];
-uniform vec4 sunsetColorTable[SUNSET_COLOR_COUNT];
-uniform float hueOff;
+// uniform vec4 sunsetColorTable[SUNSET_COLOR_COUNT];
+// uniform float hueOff;
 
 in vec2 v_wave_tex_uv[FILTER_COUNT];
 in vec3 v_position; // world space

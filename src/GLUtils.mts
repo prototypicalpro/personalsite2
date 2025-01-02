@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { WebGLMultipleRenderTargets, WebGLRenderer } from "three";
+import { WebGLRenderer } from "three";
 
 // strip #version 300 es from the shader, since threejs adds it back?
 export function stripHeader(shader: string) {
@@ -53,7 +53,7 @@ export function allocDataTexture(w: number, h: number, channels: number) {
 }
 
 export function makeRenderTarget(w: number, h: number, channels: number) {
-    const targetOpts: THREE.WebGLRenderTargetOptions = {
+    const targetOpts: THREE.RenderTargetOptions = {
         magFilter: THREE.NearestFilter,
         minFilter: THREE.NearestFilter,
         format: getFormatForChannels(channels),
@@ -65,7 +65,7 @@ export function makeRenderTarget(w: number, h: number, channels: number) {
 
 export function readMultipleRenderTargetPixels(
     renderer: WebGLRenderer,
-    target: WebGLMultipleRenderTargets,
+    target: THREE.WebGLRenderTarget<THREE.Texture>,
     index: number,
     wh: number,
     buffer: any,
@@ -75,7 +75,7 @@ export function readMultipleRenderTargetPixels(
     const gl = renderer.getContext() as WebGL2RenderingContext;
     renderer.state.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
     const texture = renderer.properties.get(
-        target.texture[index],
+        target.textures[index],
     ).__webglTexture;
     gl.framebufferTexture2D(
         gl.READ_FRAMEBUFFER,

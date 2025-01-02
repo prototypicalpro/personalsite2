@@ -167,28 +167,8 @@ void main() {
     // rays are shot from the camera into a light or the great beyond
     // they refract/reflect once on the ocean surface, bounce against the floor, and refract again on the surface. 
 
-    // vec4 color = vec4(LEADRCheaper(v_position, v_camera_normal, firstMoments, secMoments), 1.);
-    // color = vec4(, 1.);
-
     vec3 color3 = LEADREnvironmentMapSampling(camera_normal, firstMoments, secMoments, cxy);
-
-    // vec2 positive = smoothstep(-0.8, 0.8, v_position.xy);
-    // vec2 negative = 1. - positive;
-    // vec3 color3 = ledar3*negative.y*negative.y;
-    // vec3 color3 = hue3;
-
-    // the closer we are to the camera in the y plane, the darker the color should be to mimic sunset vibes
-    // color3 = color3 * smoothstep(0.8, 1., gl_FragCoord.z);
 
     vec3 spec3 = sunColor*LEADRSpecular(camera_normal, firstMoments, secMoments, cxy);
     color = vec4(color3 + spec3, 1.);
-    // color = vec4(color3, 1.);
-
-    // color = vec4(0., 0., (v_position.z)*4., 1.);
-    // color = vec4(mod(v_wave_tex_uv[2], 1.), 0., 1.);
-    // color = vec4(v_wave_blending[0], v_wave_blending[1], 0.5, 1.);
-
-    // vec3 intersect = linePlaneIntersection(v_position, v_camera_normal, floorPosition, floorNormal);
-    // vec3 texCoords = floorTextureMatrix*vec3(intersect.xy, 1.);
-    // color = textureProjLod(floorTexture, texCoords, 8.);
 }

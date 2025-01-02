@@ -19,7 +19,6 @@
     },
     "dependencies": {
         "comlink": "^4.4.2",
-        "three": "^0.171.0",
-        "wasm-feature-detect": "^1.8.0"
+        "three": "^0.171.0"
     }
 }

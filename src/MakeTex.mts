@@ -5,13 +5,17 @@ import { WIDTH, FILTER_COUNT } from "./wasm_constants.mjs";
 import makeTexVert from "./glsl/maketex.vert.glsl";
 import makeTexFrag from "./glsl/maketex.frag.glsl";
 
+export const enum TextureType {
+    Displacement = 0,
+    FirstMoment = 1,
+    SecondMoment = 2,
+}
+
 export default class MakeTex {
-    // copy verticies into textures using a render pass
-    // figure it's faster than using a manual copy and vertex pulling
     makeTexMat: THREE.RawShaderMaterial;
     makeTexMeshs: THREE.Points[];
     blankCamera: THREE.Camera;
-    renderTargets: THREE.WebGLMultipleRenderTargets[];
+    renderTargets: THREE.WebGLRenderTarget<THREE.Texture>[];
 
     constructor(
         posBufs: THREE.BufferAttribute[],
@@ -53,22 +57,22 @@ export default class MakeTex {
 
         this.renderTargets = new Array(FILTER_COUNT).fill(0).map(
             () =>
-                new THREE.WebGLMultipleRenderTargets(WIDTH, WIDTH, 3, {
+                new THREE.WebGLRenderTarget(WIDTH, WIDTH, {
+                    count: 3,
                     magFilter: THREE.LinearFilter,
                     minFilter: THREE.NearestFilter,
                     depthBuffer: false,
                     stencilBuffer: false,
                     type: THREE.FloatType,
-                    format: THREE.RGBAFormat,
                     generateMipmaps: true,
                     wrapS: THREE.RepeatWrapping,
                     wrapT: THREE.RepeatWrapping,
+                    format: THREE.RGBAFormat,
                 }),
         );
     }
 
     render(renderer: THREE.WebGLRenderer) {
-        // console.log(this.makeTexMeshs);
         if (
             !(
                 this.makeTexMeshs[0].geometry.attributes[
@@ -81,28 +85,24 @@ export default class MakeTex {
         for (let i = 0; i < FILTER_COUNT; i++) {
             renderer.setRenderTarget(this.renderTargets[i]);
             renderer.render(this.makeTexMeshs[i], this.blankCamera);
-
-            // const out = new Float32Array(WIDTH * WIDTH * 4);
-            // readMultipleRenderTargetPixels(
-            //     renderer,
-            //     this.renderTargets[i],
-            //     0,
-            //     WIDTH,
-            //     out
-            // );
-            // console.log(out);
         }
     }
 
     getDisplacementTexs() {
-        return this.renderTargets.map((r) => r.texture[0]);
+        return this.renderTargets.map(
+            (r) => r.textures[TextureType.Displacement],
+        );
     }
 
     getFirstMomentTexs() {
-        return this.renderTargets.map((r) => r.texture[1]);
+        return this.renderTargets.map(
+            (r) => r.textures[TextureType.FirstMoment],
+        );
     }
 
     getSecondMomentTexs() {
-        return this.renderTargets.map((r) => r.texture[2]);
+        return this.renderTargets.map(
+            (r) => r.textures[TextureType.SecondMoment],
+        );
     }
 }
