@@ -1,16 +1,7 @@
 <!doctype html>
 <title>Demo for Rust + WebAssembly threads</title>
 <body>
-    <p>
-        This is a demo for
-        <a href="https://github.com/GoogleChromeLabs/wasm-bindgen-rayon"
-            >wasm-bindgen-rayon</a
-        >, generating a
-        <a href="https://en.wikipedia.org/wiki/Mandelbrot_set"
-            >Mandelbrot fractal</a
-        >
-        with WebAssembly threads.
-    </p>
+    <canvas id="canvas" width="1850" height="900"></canvas>
     <input
         type="button"
         id="singleThread"
@@ -32,6 +23,5 @@
     <input type="button" id="render" value="Test Render" />
     <output id="time"></output>
     <br />
-    <canvas id="canvas" width="1080" height="1080"></canvas>
     <script type="module" src="/src/index.mts"></script>
 </body>

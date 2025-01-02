@@ -18,7 +18,7 @@ async function initHandlers() {
         setup: async (props: any) => {
             wavesPtr.waves = await WasmWaves.MakeWasmWaves(props);
             return wavesPtr.waves.memory;
-        }
+        },
     });
 }
 

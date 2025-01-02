@@ -22,8 +22,14 @@ async function init() {
     const view = await View.MakeView(canvas, handlers);
 
     let spaceDown = { space: false };
-    document.addEventListener('keydown', (e) => e.key === " " && (spaceDown.space = true));
-    document.addEventListener('keyup', (e) => e.key === " " && (spaceDown.space = false));
+    document.addEventListener(
+        "keydown",
+        (e) => e.key === " " && (spaceDown.space = true),
+    );
+    document.addEventListener(
+        "keyup",
+        (e) => e.key === " " && (spaceDown.space = false),
+    );
 
     const cb = async (t: DOMHighResTimeStamp) => {
         await view.update(t / 1000.0, spaceDown.space);

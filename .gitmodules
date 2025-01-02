@@ -1,3 +1,0 @@
-[submodule "wasm_waves/lib/wasm-bindgen-rayon"]
-	path = wasm_waves/lib/wasm-bindgen-rayon
-	url = https://github.com/RReverser/wasm-bindgen-rayon.git
