@@ -11,6 +11,7 @@
             content="#0A0A0A"
             media="(prefers-color-scheme: dark)"
         />
+        <link rel="prefetch" href="/wasm_waves/pkg/wasm_waves_bg.wasm" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
@@ -94,6 +95,8 @@
             </div>
         </div>
 
+        <!-- Used by THREE.js later -->
+        <img src="src/img/space.jpg" id="bg" class="hidden" />
         <script type="module" src="/src/ts/index.mts"></script>
     </body>
 </html>

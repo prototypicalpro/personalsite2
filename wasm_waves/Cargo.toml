@@ -31,7 +31,7 @@ wasm-bindgen-test = "0.3.49"
 
 # TODO: reenable wasm-opt as a separate pass
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+wasm-opt = true
 
 [package.metadata.wasm-pack.profile.dev.wasm-bindgen]
 dwarf-debug-info = true
@@ -47,7 +47,7 @@ opt-level = "z"
 [profile.release]
 lto = true
 # debug = true
-opt-level = 3
+opt-level = "z"
 # panic = "abort" # TODO: enable for release with -Z -Z build-std-features=panic_immediate_abort
 
 [build]

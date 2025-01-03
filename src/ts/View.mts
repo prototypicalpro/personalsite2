@@ -19,8 +19,6 @@ import oilslickFrag from "../glsl/ocean_surface/oilslick.frag.glsl";
 // import leadrFrag from "./glsl/ocean_surface/leadr.frag.glsl";
 // import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
 
-import Tex from "../img/space.jpg";
-
 export default class View {
     static readonly waveProps = {
         windows: [0.13, 5, 5, 10],
@@ -124,11 +122,16 @@ export default class View {
         this.scene.add(mesh);
     }
 
-    static async MakeView(canvasElem: HTMLCanvasElement) {
+    static async MakeView(
+        canvasElem: HTMLCanvasElement,
+        image: HTMLImageElement,
+    ) {
+        console.log(image);
+        const tex = new THREE.Texture(image);
+        tex.needsUpdate = true;
         const worker = await WasmWaves.MakeWasmWaves(View.waveProps);
         const wasmWavesMem = worker.memory;
-        const ptrs = await worker.getPtrs();
-        const tex = await new THREE.TextureLoader().loadAsync(Tex);
+        const ptrs = worker.getPtrs();
 
         return new View(canvasElem, tex, worker, wasmWavesMem, ptrs);
     }
@@ -226,7 +229,6 @@ export default class View {
             window.visualViewport.width,
             window.visualViewport.height,
         );
-        console.log(width, window.devicePixelRatio);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(width, width);
     }

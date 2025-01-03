@@ -6,16 +6,14 @@ import View from "./View.mjs";
 // import WebWorker from "./wasm_worker.mjs?worker";
 
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
-// const ctx = canvas.getContext("2d");
-const timeOutput = document.getElementById("time") as HTMLOutputElement;
-const renderButton = document.getElementById("render") as HTMLButtonElement;
+const backgroundImage = document.getElementById("bg") as HTMLImageElement;
 
 async function init() {
     // Create a separate thread from wasm-worker.js and get a proxy to its handlers.
     // const handlers = await Comlink.wrap<WorkerHandlersWrap>(new WebWorker())
     //     .handlers;
 
-    const view = await View.MakeView(canvas);
+    const view = await View.MakeView(canvas, backgroundImage);
 
     window.addEventListener("resize", () => view.resizeCanvas());
 
