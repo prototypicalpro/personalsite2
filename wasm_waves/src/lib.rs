@@ -100,7 +100,7 @@ fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_
 
 #[wasm_bindgen]
 pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
-    web_sys::console::time_with_label(&"height_field");
+    // web_sys::console::time_with_label(&"height_field");
 
     let wavegen = wavefield.field.as_mut().unwrap();
     let wavebuffers = &mut wavefield.wavebuffers;
@@ -116,5 +116,5 @@ pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
         .for_each(|((fft_slice, pos), partial)| 
             pack_result(fft_slice, pos, partial));
     
-    web_sys::console::time_end_with_label(&"height_field");
+    // web_sys::console::time_end_with_label(&"height_field");
 }

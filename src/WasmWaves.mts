@@ -16,7 +16,7 @@ export default class WasmWaves {
         damping: number;
         swell: number;
         rad_off: number;
-        windows: [number, number, number, number, number, number];
+        windows: number[];
     }): Promise<WasmWaves> {
         const ret = await WasmWavesAsm.default();
 

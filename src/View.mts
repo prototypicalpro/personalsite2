@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { stripHeader } from "./GLUtils.mjs";
-import { WorkerHandlers } from "./wasm_worker_types.mjs";
+// import { WorkerHandlers } from "./wasm_worker_types.mjs";
+import WasmWaves from "./WasmWaves.mjs";
 import {
     PACKED_SIZE_BYTES,
     PACKED_SIZE_FLOATS,
@@ -22,7 +23,7 @@ import Tex from "./img/space.jpg";
 
 export default class View {
     static readonly waveProps = {
-        windows: [0.13, 5, 5, 10] as [number, number, number, number],
+        windows: [0.13, 5, 5, 10],
         blending: [0.6, 1],
         timeScale: 0.5,
         segments: 128,
@@ -41,7 +42,7 @@ export default class View {
     static readonly sunDirection = new THREE.Vector3(-2, 0, -1).normalize();
     static readonly sunColor = new THREE.Color(1, 0.8, 0.9);
 
-    wasmWaves: WorkerHandlers;
+    wasmWaves: WasmWaves;
     renderer: THREE.WebGLRenderer;
     camera: THREE.Camera;
     scene: THREE.Scene;
@@ -61,7 +62,7 @@ export default class View {
     constructor(
         canvasElem: HTMLCanvasElement,
         tex: THREE.Texture,
-        wasmWaves: WorkerHandlers,
+        wasmWaves: WasmWaves,
         public memory: WebAssembly.Memory,
         ptrs: [number, number],
     ) {
@@ -75,6 +76,7 @@ export default class View {
             antialias: true,
             powerPreference: "high-performance",
         });
+        this.resizeCanvas();
 
         this.wavePartialBufs = new Array(FILTER_COUNT)
             .fill(0)
@@ -122,11 +124,9 @@ export default class View {
         this.scene.add(mesh);
     }
 
-    static async MakeView(
-        canvasElem: HTMLCanvasElement,
-        worker: WorkerHandlers,
-    ) {
-        const wasmWavesMem = await worker.setup(View.waveProps);
+    static async MakeView(canvasElem: HTMLCanvasElement) {
+        const worker = await WasmWaves.MakeWasmWaves(View.waveProps);
+        const wasmWavesMem = worker.memory;
         const ptrs = await worker.getPtrs();
         const tex = await new THREE.TextureLoader().loadAsync(Tex);
 
@@ -219,6 +219,16 @@ export default class View {
             skyboxTex: new THREE.Uniform(this.scene.background),
             waveBlending: new THREE.Uniform(blending),
         };
+    }
+
+    resizeCanvas() {
+        const width = Math.min(
+            window.visualViewport.width,
+            window.visualViewport.height,
+        );
+        console.log(width, window.devicePixelRatio);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(width, width);
     }
 
     updateGeoBuffers(ptr: number, geoBufs: THREE.BufferAttribute[]) {
