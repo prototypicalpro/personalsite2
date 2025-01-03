@@ -4,7 +4,7 @@
         <title>PrototypicalPro</title>
         <meta
             name="viewport"
-            content="width=device-width, initial-scale=1.0, maximum-scale=1"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=0"
         />
         <meta
             name="theme-color"
@@ -26,7 +26,7 @@
             <div class="relative max-w-full max-xl:h-[70%] xl:aspect-square">
                 <canvas class="absolute w-full h-full" id="canvas"></canvas>
                 <div
-                    class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-64"
+                    class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-56"
                 >
                     <img
                         class="object-cover object-center"
@@ -39,7 +39,7 @@
                     class="w-full relative bottom-8 right-3 xl:bottom-0 xl:right-14"
                 >
                     <h1
-                        class="text-neutral-300 font-['Tilt_Warp'] text-6xl xl:text-[11rem] leading-[0.8] text-nowrap absolute"
+                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] text-nowrap select-none clamp absolute"
                     >
                         PROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         ROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
@@ -51,7 +51,7 @@
                     </h1>
                     <!-- Since the above is position absolute, below will be needed to still calculate document flow correctly -->
                     <h1
-                        class="text-transparent font-['Tilt_Warp'] text-6xl xl:text-[11rem] leading-[0.8]"
+                        class="text-transparent font-['Tilt_Warp'] leading-[0.8] clamp select-none"
                     >
                         <br />
                         <br />
@@ -66,7 +66,9 @@
                 <div
                     class="grow self-stretch flex flex-row items-center justify-center"
                 >
-                    <p class="text-stone-50 text-lg font-['Source_Code_Pro']">
+                    <p
+                        class="text-stone-50 text-lg font-['Source_Code_Pro'] z-10"
+                    >
                         <a
                             href="https://github.com/prototypicalpro"
                             class="underline"
