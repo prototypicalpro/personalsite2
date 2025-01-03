@@ -22,12 +22,9 @@
     </head>
 
     <body class="overflow-hidden">
-        <div class="h-screen w-screen flex flex-col md:flex-row">
-            <div class="relative">
-                <canvas
-                    class="object-center aspect-square w-full md:w-auto md:h-full"
-                    id="canvas"
-                ></canvas>
+        <div class="h-screen w-screen flex flex-col xl:flex-row">
+            <div class="relative max-w-full max-xl:h-[70%] xl:aspect-square">
+                <canvas class="absolute w-full h-full" id="canvas"></canvas>
                 <div
                     class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-64"
                 >
@@ -37,31 +34,31 @@
                     />
                 </div>
             </div>
-            <div class="grow h-full flex flex-col md:py-6">
+            <div class="grow flex flex-col pb-12 xl:py-6">
                 <div
-                    class="w-full relative bottom-8 right-2 md:bottom-0 md:right-14"
+                    class="w-full relative bottom-8 right-3 xl:bottom-0 xl:right-14"
                 >
                     <h1
-                        class="text-neutral-300 font-['Tilt_Warp'] text-6xl md:text-[11rem] leading-[0.8] text-nowrap absolute"
+                        class="text-neutral-300 font-['Tilt_Warp'] text-6xl xl:text-[11rem] leading-[0.8] text-nowrap absolute"
                     >
-                        PROTOTYPICALPRO PROTOTYPICALPRO<br />
-                        ROTOTYPICALPRO PROTOTYPICALPRO<br />
-                        OTOTYPICALPRO PROTOTYPICALPRO<br />
-                        TOTYPICALPRO PROTOTYPICALPRO<br />
+                        PROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
+                        ROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
+                        OTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         <span class="hidden md:block">
-                            OTYPICALPRO PROTOTYPICALPRO<br />
+                            TOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
+                            OTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         </span>
                     </h1>
                     <!-- Since the above is position absolute, below will be needed to still calculate document flow correctly -->
                     <h1
-                        class="text-transparent font-['Tilt_Warp'] text-6xl md:text-[11rem] leading-[0.8]"
+                        class="text-transparent font-['Tilt_Warp'] text-6xl xl:text-[11rem] leading-[0.8]"
                     >
-                        A<br />
-                        A<br />
-                        A<br />
+                        <br />
+                        <br />
+                        <br />
                         <span class="hidden md:block">
-                            A<br />
-                            A<br />
+                            <br />
+                            <br />
                         </span>
                     </h1>
                 </div>

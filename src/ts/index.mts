@@ -15,8 +15,6 @@ async function init() {
 
     const view = await View.MakeView(canvas, backgroundImage);
 
-    window.addEventListener("resize", () => view.resizeCanvas());
-
     const cb = async (t: DOMHighResTimeStamp) => {
         await view.update(t / 1000.0, true);
 

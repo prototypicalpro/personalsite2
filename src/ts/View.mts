@@ -39,33 +39,36 @@ export default class View {
 
     static readonly sunDirection = new THREE.Vector3(-2, 0, -1).normalize();
     static readonly sunColor = new THREE.Color(1, 0.8, 0.9);
+    static readonly cameraDistance = 9;
 
-    wasmWaves: WasmWaves;
+    camera: THREE.PerspectiveCamera = new THREE.PerspectiveCamera(
+        50,
+        1,
+        0.2,
+        10000,
+    );
+    scene: THREE.Scene = new THREE.Scene();
     renderer: THREE.WebGLRenderer;
-    camera: THREE.Camera;
-    scene: THREE.Scene;
     wavePosBufs: THREE.BufferAttribute[];
     wavePartialBufs: THREE.BufferAttribute[];
     oceanGeo: THREE.PlaneGeometry;
     oceanMeshList: THREE.Mesh[] = [];
     controls: OrbitControls;
-    backTex: THREE.Texture;
-
+    resizeObserver: ResizeObserver;
     makeTex: MakeTex;
+
     private posPtr: number;
     private partPtr: number;
-
     private renderWavesPromise: Promise<void> = Promise.resolve();
 
     constructor(
-        canvasElem: HTMLCanvasElement,
-        tex: THREE.Texture,
-        wasmWaves: WasmWaves,
+        public canvasElem: HTMLCanvasElement,
+        public backTex: THREE.Texture,
+        public wasmWaves: WasmWaves,
         public memory: WebAssembly.Memory,
         ptrs: [number, number],
     ) {
         [this.posPtr, this.partPtr] = ptrs;
-        this.wasmWaves = wasmWaves;
 
         this.renderer = new THREE.WebGLRenderer({
             canvas: canvasElem,
@@ -74,7 +77,6 @@ export default class View {
             antialias: true,
             powerPreference: "high-performance",
         });
-        this.resizeCanvas();
 
         this.wavePartialBufs = new Array(FILTER_COUNT)
             .fill(0)
@@ -87,15 +89,11 @@ export default class View {
 
         this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
 
-        this.camera = new THREE.PerspectiveCamera(50, 1, 0.2, 10000);
-        this.scene = new THREE.Scene();
-
         this.controls = new OrbitControls(this.camera, canvasElem);
-        this.camera.position.set(0, 0, 9);
+        this.camera.position.set(0, 0, View.cameraDistance);
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
-        this.backTex = tex;
         this.backTex.wrapS = THREE.RepeatWrapping;
         this.backTex.wrapT = THREE.RepeatWrapping;
         this.backTex.magFilter = THREE.LinearFilter;
@@ -120,15 +118,28 @@ export default class View {
         const mesh = new THREE.Mesh(this.oceanGeo, shaderMaterial);
         mesh.position.set(0, 0, 0);
         this.scene.add(mesh);
+
+        this.resizeObserver = new ResizeObserver(this.onResizeEvent.bind(this));
+        try {
+            // only call us of the number of device pixels changed
+            this.resizeObserver.observe(canvasElem, {
+                box: "device-pixel-content-box",
+            });
+        } catch {
+            // device-pixel-content-box is not supported so fallback to this
+            this.resizeObserver.observe(canvasElem, {
+                box: "content-box",
+            });
+        }
     }
 
     static async MakeView(
         canvasElem: HTMLCanvasElement,
         image: HTMLImageElement,
     ) {
-        console.log(image);
         const tex = new THREE.Texture(image);
         tex.needsUpdate = true;
+
         const worker = await WasmWaves.MakeWasmWaves(View.waveProps);
         const wasmWavesMem = worker.memory;
         const ptrs = worker.getPtrs();
@@ -186,7 +197,7 @@ export default class View {
     }
 
     private makeRaytraceUniforms() {
-        const { windows, blending } = View.waveProps;
+        const { blending } = View.waveProps;
 
         const floorTextureMatrix = new THREE.Matrix3().setUvTransform(
             0.5,
@@ -224,13 +235,46 @@ export default class View {
         };
     }
 
-    resizeCanvas() {
-        const width = Math.min(
-            window.visualViewport.width,
-            window.visualViewport.height,
-        );
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setSize(width, width);
+    onResizeEvent(entries: ResizeObserverEntry[]) {
+        const relavantEvent = entries.filter(
+            (e) => e.target === this.canvasElem,
+        )[0];
+
+        if (!relavantEvent) return;
+
+        // https://webgl2fundamentals.org/webgl/lessons/webgl-resizing-the-canvas.html
+        let width: number, height: number, dpr: number;
+        dpr = window.devicePixelRatio;
+        if (relavantEvent.devicePixelContentBoxSize) {
+            // NOTE: Only this path gives the correct answer
+            // The other paths are imperfect fallbacks
+            // for browsers that don't provide anyway to do this
+            width = relavantEvent.devicePixelContentBoxSize[0].inlineSize;
+            height = relavantEvent.devicePixelContentBoxSize[0].blockSize;
+            dpr = 1; // it's already in width and height
+        } else if (relavantEvent.contentBoxSize) {
+            if (relavantEvent.contentBoxSize[0]) {
+                width = relavantEvent.contentBoxSize[0].inlineSize;
+                height = relavantEvent.contentBoxSize[0].blockSize;
+            } else {
+                width = relavantEvent.contentBoxSize.inlineSize;
+                height = relavantEvent.contentBoxSize.blockSize;
+            }
+        } else {
+            width = relavantEvent.contentRect.width;
+            height = relavantEvent.contentRect.height;
+        }
+
+        this.camera.aspect = width / height;
+        let cameraZ = View.cameraDistance;
+        if (this.camera.aspect >= 1) {
+            cameraZ = cameraZ / this.camera.aspect;
+        }
+        this.camera.position.set(0, 0, cameraZ);
+
+        this.camera.updateProjectionMatrix();
+        this.renderer.setPixelRatio(dpr);
+        this.renderer.setSize(width, height, false);
     }
 
     updateGeoBuffers(ptr: number, geoBufs: THREE.BufferAttribute[]) {

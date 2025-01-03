@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { readMultipleRenderTargetPixels, stripHeader } from "./GLUtils.mjs";
+import { stripHeader } from "./GLUtils.mjs";
 import { WIDTH, FILTER_COUNT } from "./wasm_constants.mjs";
 
 import makeTexVert from "../glsl/maketex.vert.glsl";
