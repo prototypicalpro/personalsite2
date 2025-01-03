@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { readMultipleRenderTargetPixels, stripHeader } from "./GLUtils.mjs";
 import { WIDTH, FILTER_COUNT } from "./wasm_constants.mjs";
 
-import makeTexVert from "./glsl/maketex.vert.glsl";
-import makeTexFrag from "./glsl/maketex.frag.glsl";
+import makeTexVert from "../glsl/maketex.vert.glsl";
+import makeTexFrag from "../glsl/maketex.frag.glsl";
 
 export const enum TextureType {
     Displacement = 0,

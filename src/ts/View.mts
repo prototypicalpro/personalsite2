@@ -11,15 +11,15 @@ import {
 } from "./wasm_constants.mjs";
 import MakeTex from "./MakeTex.mjs";
 
-import oceanVert from "./glsl/ocean_surface/ocean.vert.glsl";
-import oilslickFrag from "./glsl/ocean_surface/oilslick.frag.glsl";
+import oceanVert from "../glsl/ocean_surface/ocean.vert.glsl";
+import oilslickFrag from "../glsl/ocean_surface/oilslick.frag.glsl";
 
 // Shaders I wrote but never used
 // import hueFrag from "./glsl/ocean_surface/huewheel.frag.glsl";
 // import leadrFrag from "./glsl/ocean_surface/leadr.frag.glsl";
 // import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
 
-import Tex from "./img/space.jpg";
+import Tex from "../img/space.jpg";
 
 export default class View {
     static readonly waveProps = {
