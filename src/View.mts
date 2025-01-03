@@ -22,15 +22,8 @@ import Tex from "./img/space.jpg";
 
 export default class View {
     static readonly waveProps = {
-        windows: [0, 0.1, 0.13, 5, 5, 10] as [
-            number,
-            number,
-            number,
-            number,
-            number,
-            number,
-        ],
-        blending: [0, 0.6, 1],
+        windows: [0.13, 5, 5, 10] as [number, number, number, number],
+        blending: [0.6, 1],
         timeScale: 0.5,
         segments: 128,
         depth: 100,
@@ -47,17 +40,6 @@ export default class View {
 
     static readonly sunDirection = new THREE.Vector3(-2, 0, -1).normalize();
     static readonly sunColor = new THREE.Color(1, 0.8, 0.9);
-    static readonly waveTiles: Array<{
-        position: [number, number];
-        shader: Partial<THREE.ShaderMaterialParameters>;
-    }> = [
-        {
-            position: [0, 0],
-            shader: {
-                uniforms: {},
-            },
-        },
-    ];
 
     wasmWaves: WorkerHandlers;
     renderer: THREE.WebGLRenderer;
@@ -151,7 +133,7 @@ export default class View {
         return new View(canvasElem, tex, worker, wasmWavesMem, ptrs);
     }
 
-    private static makeUvTransform(
+    private static makeWaveTextureUvTransform(
         domainFrac: [number, number],
         offset: [number, number],
     ) {
@@ -222,15 +204,15 @@ export default class View {
                 this.makeTex.getSecondMomentTexs(),
             ),
             waveTextureMatrix: new THREE.Uniform(
-                View.makeUvTransform([1, -1], [1, 1]),
+                View.makeWaveTextureUvTransform([1, -1], [1, 1]),
             ),
-            domain: new THREE.Uniform(View.waveProps.windows[5]),
+            domain: new THREE.Uniform(View.getDomain()),
             floorPosition: new THREE.Uniform(
                 new THREE.Vector3(0, 0, -View.waveProps.visualDepth),
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
             floorTexture: new THREE.Uniform(this.backTex),
-            floorSize: new THREE.Uniform(windows[5]),
+            floorSize: new THREE.Uniform(View.getDomain()),
             floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
             sunColor: new THREE.Uniform(View.sunColor),

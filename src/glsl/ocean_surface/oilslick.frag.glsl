@@ -69,7 +69,7 @@ vec3 OilSlickSampling(vec3 wi, vec2 firstMoments, vec3 secMoments) {
 
 #pragma unroll_loop_start
     for (int i = 0; i < 3; i++) {
-        color3 = color3 + sample_slick(lambda_base / float(UNROLLED_LOOP_INDEX));
+        color3 = color3 + sample_slick(lambda_base / (float(UNROLLED_LOOP_INDEX) + 1.));
     }
 #pragma unroll_loop_end
 

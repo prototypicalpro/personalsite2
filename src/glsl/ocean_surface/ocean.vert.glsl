@@ -15,7 +15,7 @@ in vec3 position; // (x, y, z) of render plane
 // all code above this line removed at runtime
 #pragma end_pre_strip
 
-#define FILTER_COUNT 3
+#define FILTER_COUNT 2
 
 precision highp float;
 precision highp int;
@@ -43,7 +43,7 @@ void main() {
     vec3 waveTexCoords;
     float scale;
 #pragma unroll_loop_start
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         scale = domain * waveTextureMatrix[i][0][0];
 
         waveTexCoords = waveTextureMatrix[i]*vec3(position.xy, 1.0);

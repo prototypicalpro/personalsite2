@@ -1,4 +1,4 @@
-#define FILTER_COUNT 3
+#define FILTER_COUNT 2
 
 precision highp float;
 precision highp int;
@@ -81,7 +81,7 @@ vec4 textureBicubic(sampler2D sampler, vec2 texCoords){
 }
 
 vec2 combineFirstMoments(vec2 moments[FILTER_COUNT]) {
-    return moments[0] + moments[1] + moments[2];
+    return moments[0] + moments[1];
 }
 
 vec3 addSecondMoments(vec2 firstMomentLhs, vec3 secMomentsLhs, vec2 firstMomentRhs, vec3 secMomentsRhs) {
@@ -92,8 +92,7 @@ vec3 addSecondMoments(vec2 firstMomentLhs, vec3 secMomentsLhs, vec2 firstMomentR
 
 vec3 combineSecondMoments(vec2 moments[FILTER_COUNT], vec3 secMoments[FILTER_COUNT]) {
     vec2 moments01 = moments[0] + moments[1];
-    vec3 secMoments01 = addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
-    return addSecondMoments(moments01, secMoments01, moments[2], secMoments[2]);
+    return addSecondMoments(moments[0], secMoments[0], moments[1], secMoments[1]);
 }
 
 // https://gpuopen.com/gdc-presentations/2019/gdc-2019-agtd6-interactive-water-simulation-in-atlas.pdf

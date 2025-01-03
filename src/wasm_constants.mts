@@ -1,5 +1,5 @@
 export const WIDTH = 256;
-export const FILTER_COUNT = 3;
+export const FILTER_COUNT = 2;
 export const PACKED_SIZE = WIDTH * WIDTH;
 export const PACKED_SIZE_FLOATS = PACKED_SIZE * 4;
 export const PACKED_SIZE_BYTES =

@@ -14,7 +14,7 @@ pub const WIDTH: usize = 256;
 pub const HALF_WIDTH: usize = WIDTH/2 + 1;
 pub const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
 pub const SIZE: usize = WIDTH*WIDTH;
-pub const FILTER_COUNT: usize = 3;
+pub const FILTER_COUNT: usize = 2;
 pub const FACTOR_COUNT: usize = 8;
 pub const HALF_FACTOR_COUNT: usize = FACTOR_COUNT / 2;
 
@@ -164,7 +164,6 @@ impl WaveGen {
             filters: [
                 WaveWindow::new_sharp(windows[0], windows[1]),
                 WaveWindow::new_sharp(windows[2], windows[3]),
-                WaveWindow::new_sharp(windows[4], windows[5])
             ],
         }
     }
