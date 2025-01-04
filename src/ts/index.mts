@@ -12,6 +12,12 @@ function clamp(x: number, abs: number) {
     return Math.min(Math.max(x, -abs), abs);
 }
 
+function angleDiff(a: number, b: number) {
+    let diff = (b - a + 180) % 360;
+    if (diff < 0) diff += 360;
+    return diff - 180;
+}
+
 async function init() {
     // Create a separate thread from wasm-worker.js and get a proxy to its handlers.
     // This is disabled since GitHub pages does not support the correct headers for now
@@ -37,9 +43,10 @@ async function init() {
             }
             console.log(e.beta, e.gamma);
 
+            const degToRad = 180 / Math.PI;
             view.setParallax([
-                clamp((e.gamma - startGamma) / 10.0, 1),
-                clamp(-(e.beta - startBeta) / 10.0, 1),
+                clamp(angleDiff(e.gamma, startGamma) * degToRad * 0.001, 1),
+                -clamp(angleDiff(e.beta, startBeta) * degToRad * 0.001, 1),
             ]);
         },
         true,
@@ -48,7 +55,7 @@ async function init() {
     const parent = canvas.parentElement;
     parent.addEventListener("mousemove", (e) => {
         view.setParallax([
-            (e.offsetX / parent.clientWidth) * 2 - 1,
+            -((e.offsetX / parent.clientWidth) * 2 - 1),
             (e.offsetY / parent.clientHeight) * 2 - 1,
         ]);
     });

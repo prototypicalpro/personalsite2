@@ -1,9 +1,9 @@
 export default class Smooth {
-    private lastTarget: [number, number] = [0, 0];
     private target: [number, number] = [0, 0];
     private current: [number, number] = [0, 0];
     private lastTime: number = Date.now();
-    constructor(private readonly timeScale: number) {}
+
+    constructor(private readonly p: number) {}
 
     easeOutCirc(x: number): number {
         return Math.sqrt(1 - Math.pow(x - 1, 2));
@@ -11,24 +11,26 @@ export default class Smooth {
 
     pushValue(value: [number, number]) {
         if (this.target[0] !== value[0] || this.target[1] !== value[1]) {
-            this.lastTarget = this.current;
             this.target = value;
-            this.lastTime = Date.now();
         }
     }
 
     getValue(): [number, number] {
-        const time = Math.min((Date.now() - this.lastTime) * this.timeScale, 1);
-        if (time >= 1) {
-            this.current = this.target;
-            return this.current;
-        }
+        const now = Date.now();
+        const deltaT = now - this.lastTime;
+        this.lastTime = now;
+
+        const delta = [
+            this.target[0] - this.current[0],
+            this.target[1] - this.current[1],
+        ];
+        if (delta[0] == 0 && delta[1] == 0) return this.target;
+
+        const targetSpeed = [delta[0] * this.p, delta[1] * this.p];
 
         this.current = [
-            this.lastTarget[0] +
-                (this.target[0] - this.lastTarget[0]) * this.easeOutCirc(time),
-            this.lastTarget[1] +
-                (this.target[1] - this.lastTarget[1]) * this.easeOutCirc(time),
+            this.current[0] + targetSpeed[0] * deltaT,
+            this.current[1] + targetSpeed[1] * deltaT,
         ];
 
         return this.current;

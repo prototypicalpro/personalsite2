@@ -48,7 +48,7 @@ export default class View {
         10000,
     );
     scene: THREE.Scene = new THREE.Scene();
-    parallaxSmoother: Smooth = new Smooth(0.0005);
+    parallaxSmoother: Smooth = new Smooth(0.01);
     renderer: THREE.WebGLRenderer;
     wavePosBufs: THREE.BufferAttribute[];
     wavePartialBufs: THREE.BufferAttribute[];
@@ -295,8 +295,8 @@ export default class View {
 
     private setParallaxInternal(coords: [number, number]) {
         const position = new THREE.Vector3(
-            -coords[0] * 2,
-            coords[1] * 2,
+            coords[0] * 1.5,
+            coords[1] * 1.5,
             this.camera.position.z,
         );
         this.camera.position.set(position.x, position.y, position.z);
