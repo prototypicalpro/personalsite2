@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { stripHeader } from "./GLUtils.mjs";
 // import { WorkerHandlers } from "./wasm_worker_types.mjs";
 import WasmWaves from "./WasmWaves.mjs";
@@ -13,6 +12,7 @@ import MakeTex from "./MakeTex.mjs";
 
 import oceanVert from "../glsl/ocean_surface/ocean.vert.glsl";
 import oilslickFrag from "../glsl/ocean_surface/oilslick.frag.glsl";
+import Smooth from "./Smooth.mjs";
 
 // Shaders I wrote but never used
 // import hueFrag from "./glsl/ocean_surface/huewheel.frag.glsl";
@@ -48,12 +48,12 @@ export default class View {
         10000,
     );
     scene: THREE.Scene = new THREE.Scene();
+    parallaxSmoother: Smooth = new Smooth(0.0005);
     renderer: THREE.WebGLRenderer;
     wavePosBufs: THREE.BufferAttribute[];
     wavePartialBufs: THREE.BufferAttribute[];
     oceanGeo: THREE.PlaneGeometry;
     oceanMeshList: THREE.Mesh[] = [];
-    controls: OrbitControls;
     resizeObserver: ResizeObserver;
     makeTex: MakeTex;
 
@@ -89,10 +89,7 @@ export default class View {
 
         this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
 
-        this.controls = new OrbitControls(this.camera, canvasElem);
         this.camera.position.set(0, 0, View.cameraDistance);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
 
         this.backTex.wrapS = THREE.RepeatWrapping;
         this.backTex.wrapT = THREE.RepeatWrapping;
@@ -291,6 +288,21 @@ export default class View {
         }
     }
 
+    setParallax(coords: [number, number]) {
+        console.log(coords);
+        this.parallaxSmoother.pushValue(coords);
+    }
+
+    private setParallaxInternal(coords: [number, number]) {
+        const position = new THREE.Vector3(
+            -coords[0] * 2,
+            coords[1] * 2,
+            this.camera.position.z,
+        );
+        this.camera.position.set(position.x, position.y, position.z);
+        this.camera.lookAt(0, 0, 0);
+    }
+
     public async update(secs: number, updateWaves: boolean = true) {
         if (updateWaves) {
             await this.renderWavesPromise;
@@ -306,7 +318,7 @@ export default class View {
             this.makeTex.render(this.renderer);
         }
 
-        this.controls.update();
+        this.setParallaxInternal(this.parallaxSmoother.getValue());
 
         this.renderer.setRenderTarget(null);
         this.renderer.render(this.scene, this.camera);

@@ -23,13 +23,13 @@
 
     <body class="overflow-hidden">
         <div class="h-screen w-screen flex flex-col xl:flex-row">
-            <div class="relative max-w-full max-xl:h-[70%] xl:aspect-square">
+            <div class="relative max-w-full max-xl:h-[65%] xl:aspect-square">
                 <canvas class="absolute w-full h-full" id="canvas"></canvas>
                 <div
-                    class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-56"
+                    class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-56 pointer-events-none"
                 >
                     <img
-                        class="object-cover object-center"
+                        class="object-cover object-center pointer-events-none"
                         src="src/img/logo.png"
                     />
                 </div>
@@ -39,24 +39,24 @@
                     class="w-full relative bottom-8 right-3 xl:bottom-0 xl:right-14"
                 >
                     <h1
-                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] text-nowrap select-none clamp absolute"
+                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl text-nowrap select-none clamp absolute"
                     >
                         PROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         ROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         OTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
-                        <span class="hidden md:block">
+                        <span class="hidden xl:block">
                             TOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                             OTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         </span>
                     </h1>
                     <!-- Since the above is position absolute, below will be needed to still calculate document flow correctly -->
                     <h1
-                        class="text-transparent font-['Tilt_Warp'] leading-[0.8] clamp select-none"
+                        class="text-transparent font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl clamp select-none"
                     >
                         <br />
                         <br />
-                        <br />
-                        <span class="hidden md:block">
+                        <span class="hidden xl:block">
+                            <br />
                             <br />
                             <br />
                         </span>
