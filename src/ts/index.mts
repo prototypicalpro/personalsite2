@@ -24,7 +24,15 @@ async function init() {
     // const handlers = await Comlink.wrap<WorkerHandlersWrap>(new WebWorker())
     //     .handlers;
 
-    const view = await View.MakeView(canvas, backgroundImage);
+    // Test device width, for lg displays assume higher performance
+    const perfCheck = window.matchMedia("(max-width: 768px)");
+    console.log("Performance check", perfCheck);
+
+    const view = await View.MakeView(
+        canvas,
+        backgroundImage,
+        perfCheck.matches,
+    );
 
     const cb = async (t: DOMHighResTimeStamp) => {
         await view.update(t / 1000.0, true);
@@ -37,16 +45,19 @@ async function init() {
     window.addEventListener(
         "deviceorientation",
         (e) => {
+            if (typeof e.beta !== "number" || typeof e.gamma !== "number") {
+                return;
+            }
+
             if (startBeta === undefined || startGamma === undefined) {
                 startBeta = e.beta;
                 startGamma = e.gamma;
             }
-            console.log(e.beta, e.gamma);
 
             const degToRad = 180 / Math.PI;
             view.setParallax([
-                clamp(angleDiff(e.gamma, startGamma) * degToRad * 0.001, 1),
-                -clamp(angleDiff(e.beta, startBeta) * degToRad * 0.001, 1),
+                -clamp(angleDiff(e.gamma, startGamma) * degToRad * 0.001, 1),
+                clamp(angleDiff(e.beta, startBeta) * degToRad * 0.001, 1),
             ]);
         },
         true,

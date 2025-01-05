@@ -1,44 +1,43 @@
 #![feature(new_uninit)]
+#![feature(generic_const_exprs)]
 
 extern crate console_error_panic_hook;
 
-use wasm_bindgen::{prelude::*};
-use itertools::Itertools;
 use std::arch::wasm32::*;
 use std::{pin::Pin, convert::TryFrom};
+
+use wasm_bindgen::prelude::*;
+use itertools::Itertools;
 
 mod const_twid;
 mod wavegen;
 mod gamma;
 pub mod simd;
 
-use wavegen::{WaveGen, SIZE, FILTER_COUNT, WaveGenOutput, WaveBuffers, HALF_FACTOR_COUNT, HALF_SIZE};
-use crate::simd::{WasmSimdNum};
+use wavegen::{WaveBuffers, WaveGen, WaveGenTrait, FILTER_COUNT, HALF_FACTOR_COUNT};
+use crate::simd::WasmSimdNum;
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-const PACKED_SIZE: usize = SIZE*4;
+struct WasmScratch<const N: usize>
+    where [(); (N/2 + 1)*N]:,
+    [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
+    [(); N*N*4]: {
 
-#[wasm_bindgen]
-pub struct RetBuf {
-    #[wasm_bindgen(skip)]
-    pub field: Option<Box<WaveGen>>,
-    #[wasm_bindgen(skip)]
-    pub wavebuffers: [WaveBuffers; FILTER_COUNT],
-    #[wasm_bindgen(skip)]
-    pub fft_out: WaveGenOutput,
-    #[wasm_bindgen(skip)]
-    pub pos_out: Pin<Box<[[f32; PACKED_SIZE]; FILTER_COUNT]>>,
-    #[wasm_bindgen(skip)]
-    pub partial_out: Pin<Box<[[f32; PACKED_SIZE]; FILTER_COUNT]>>
+    pub field: Option<Box<WaveGen<N>>>,
+    pub wavebuffers: [WaveBuffers<N>; FILTER_COUNT],
+    pub fft_out: <WaveGen<N> as WaveGenTrait<N>>::WaveGenOutput,
+    pub pos_out: Pin<Box<[[f32; N*N*4]; FILTER_COUNT]>>,
+    pub partial_out: Pin<Box<[[f32; N*N*4]; FILTER_COUNT]>>
 }
 
-#[wasm_bindgen]
-impl RetBuf {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> RetBuf {
-        RetBuf{
+impl<const N: usize> WasmScratch<N>
+    where [(); (N/2 + 1)*N]:,
+    [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
+    [(); N*N*4]: {
+    pub fn new() -> WasmScratch<N> {
+        WasmScratch {
             field: None,
             wavebuffers: WaveGen::make_wavebuffers(),
             fft_out: WaveGen::make_output_buffer(),
@@ -46,13 +45,78 @@ impl RetBuf {
             partial_out: Pin::new(unsafe { Box::new_uninit().assume_init() }),
         }
     }
+}
+
+trait RetBufTrait<const N: usize>
+    where [(); (N/2 + 1)*N]:,
+    [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
+    [(); N*N*4]: {
+
+    fn scratch_mut(&mut self) -> &mut WasmScratch<N>;
+    fn scratch(&self) -> &WasmScratch<N>;
+
+    fn get_partial_out_ptr_base(&self) -> *const f32 {
+        return self.scratch().partial_out.as_ptr() as *const f32;
+    }
+
+    fn get_pos_out_ptr_base(&self) -> *const f32 {
+        return self.scratch().pos_out.as_ptr() as *const f32;
+    }
+}
+
+#[wasm_bindgen]
+pub struct RetBuf256 {
+    scratch: WasmScratch<256>
+}
+
+impl RetBufTrait<256> for RetBuf256 {
+    fn scratch(&self) -> &WasmScratch<256> { &self.scratch }
+    fn scratch_mut(&mut self) -> &mut WasmScratch<256> { &mut self.scratch }
+}
+
+#[wasm_bindgen]
+impl RetBuf256 {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> RetBuf256 {
+        RetBuf256 {
+            scratch: WasmScratch::new()
+        }
+    }
 
     pub fn get_pos_out_ptr(&self) -> *const f32 {
-        self.pos_out.as_ptr() as *const f32
+        self.get_pos_out_ptr_base()
     }
 
     pub fn get_partial_out_ptr(&self) -> *const f32 {
-        self.partial_out.as_ptr() as *const f32
+        self.get_partial_out_ptr_base()
+    }
+}
+
+#[wasm_bindgen]
+pub struct RetBuf128 {
+    scratch: WasmScratch<128>
+}
+
+impl RetBufTrait<128> for RetBuf128 {
+    fn scratch(&self) -> &WasmScratch<128> { &self.scratch }
+    fn scratch_mut(&mut self) -> &mut WasmScratch<128> { &mut self.scratch }
+}
+
+#[wasm_bindgen]
+impl RetBuf128 {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> RetBuf128 {
+        RetBuf128 {
+            scratch: WasmScratch::new()
+        }
+    }
+
+    pub fn get_pos_out_ptr(&self) -> *const f32 {
+        self.get_pos_out_ptr_base()
+    }
+
+    pub fn get_partial_out_ptr(&self) -> *const f32 {
+        self.get_partial_out_ptr_base()
     }
 }
 
@@ -61,8 +125,11 @@ pub fn main_fn() {
     console_error_panic_hook::set_once();
 }
 
-#[wasm_bindgen]
-pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf) {
+fn gen_wavefield_base<const N: usize> (depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut WasmScratch<N>) 
+    where [(); (N/2 + 1)*N]:,
+    [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
+    [(); N*N*4]: {
+
     let windows = <[f32; FILTER_COUNT*2]>::try_from(windows).unwrap();
 
     let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, swell_off, &windows));
@@ -70,8 +137,18 @@ pub fn gen_wavefield(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swel
     output.field = Some(wavefield);
 }
 
-fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; PACKED_SIZE], partial_out: &mut [f32; PACKED_SIZE]) {
-    for i in (0..SIZE).step_by(2) {
+#[wasm_bindgen]
+pub fn gen_wavefield_128(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf128) {
+    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, output.scratch_mut());
+}
+
+#[wasm_bindgen]
+pub fn gen_wavefield_256(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf256) {
+    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, output.scratch_mut());
+}
+
+fn pack_result<const N: usize>(fft_out: &[Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; N*N*4], partial_out: &mut [f32; N*N*4]) {
+    for i in (0..N*N).step_by(2) {
         unsafe {
             let dxdy = v128_load(fft_out[0].as_ptr().add(i*2) as *const v128); // let (dx0, dx1, dy0, dy1)
             let hdxy = v128_load(fft_out[1].as_ptr().add(i*2) as *const v128); // let (h0, h1, dxy0, dxy1)
@@ -84,7 +161,7 @@ fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_
         }
     }
 
-    for i in (0..SIZE).step_by(2) {
+    for i in (0..N*N).step_by(2) {
         unsafe {
             let dxxdyy = v128_load(fft_out[2].as_ptr().add(i*2) as *const v128); // let (dx0, dx1, dy0, dy1)
             let dzxdzy = v128_load(fft_out[3].as_ptr().add(i*2) as *const v128); // let (h0, h1, dxy0, dxy1)
@@ -98,8 +175,11 @@ fn pack_result(fft_out: &[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_
     }
 }
 
-#[wasm_bindgen]
-pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
+fn gen_and_paint_height_field_base<const N: usize>(time: f32, wavefield: &mut WasmScratch<N>) 
+    where [(); (N/2 + 1)*N]:,
+    [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
+    [(); N*N*4]: {
+
     // web_sys::console::time_with_label(&"height_field");
 
     let wavegen = wavefield.field.as_mut().unwrap();
@@ -117,4 +197,14 @@ pub fn gen_and_paint_height_field(time: f32, wavefield: &mut RetBuf) {
             pack_result(fft_slice, pos, partial));
     
     // web_sys::console::time_end_with_label(&"height_field");
+}
+
+#[wasm_bindgen]
+pub fn gen_and_paint_height_field_256(time: f32, retbuf: &mut RetBuf256) {
+    gen_and_paint_height_field_base(time, retbuf.scratch_mut());
+}
+
+#[wasm_bindgen]
+pub fn gen_and_paint_height_field_128(time: f32, retbuf: &mut RetBuf128) {
+    gen_and_paint_height_field_base(time, retbuf.scratch_mut());
 }

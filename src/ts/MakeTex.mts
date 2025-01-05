@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { stripHeader } from "./GLUtils.mjs";
-import { WIDTH, FILTER_COUNT } from "./wasm_constants.mjs";
 
 import makeTexVert from "../glsl/maketex.vert.glsl";
 import makeTexFrag from "../glsl/maketex.frag.glsl";
@@ -20,6 +19,8 @@ export default class MakeTex {
     constructor(
         posBufs: THREE.BufferAttribute[],
         partBufs: THREE.BufferAttribute[],
+        private readonly width: number,
+        private readonly filterCount: number,
     ) {
         this.blankCamera = new THREE.Camera();
         this.blankCamera.position.z = 1;
@@ -31,12 +32,12 @@ export default class MakeTex {
         });
 
         // position is center of every pixel
-        const rescale = 2 / WIDTH;
-        const off = 1 / WIDTH;
-        const coords = new Float32Array({ length: WIDTH ** 2 * 3 });
+        const rescale = 2 / this.width;
+        const off = 1 / this.width;
+        const coords = new Float32Array({ length: this.width ** 2 * 3 });
         let index = 0;
-        for (let y = 0; y < WIDTH; y++) {
-            for (let x = 0; x < WIDTH; x++) {
+        for (let y = 0; y < this.width; y++) {
+            for (let x = 0; x < this.width; x++) {
                 coords[index++] = x * rescale + off - 1;
                 coords[index++] = y * rescale + off - 1;
                 coords[index++] = 0;
@@ -44,7 +45,7 @@ export default class MakeTex {
         }
 
         this.makeTexMeshs = [];
-        for (let i = 0; i < FILTER_COUNT; i++) {
+        for (let i = 0; i < this.filterCount; i++) {
             const newGeo = new THREE.BufferGeometry();
             newGeo.setAttribute(
                 "position",
@@ -55,9 +56,9 @@ export default class MakeTex {
             this.makeTexMeshs.push(new THREE.Points(newGeo, this.makeTexMat));
         }
 
-        this.renderTargets = new Array(FILTER_COUNT).fill(0).map(
+        this.renderTargets = new Array(this.filterCount).fill(0).map(
             () =>
-                new THREE.WebGLRenderTarget(WIDTH, WIDTH, {
+                new THREE.WebGLRenderTarget(this.width, this.width, {
                     count: 3,
                     magFilter: THREE.LinearFilter,
                     minFilter: THREE.NearestFilter,
@@ -82,7 +83,7 @@ export default class MakeTex {
         )
             throw new Error("Geometry attributes not updated!");
 
-        for (let i = 0; i < FILTER_COUNT; i++) {
+        for (let i = 0; i < this.filterCount; i++) {
             renderer.setRenderTarget(this.renderTargets[i]);
             renderer.render(this.makeTexMeshs[i], this.blankCamera);
         }

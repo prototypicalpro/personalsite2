@@ -2,12 +2,6 @@ import * as THREE from "three";
 import { stripHeader } from "./GLUtils.mjs";
 // import { WorkerHandlers } from "./wasm_worker_types.mjs";
 import WasmWaves from "./WasmWaves.mjs";
-import {
-    PACKED_SIZE_BYTES,
-    PACKED_SIZE_FLOATS,
-    FILTER_COUNT,
-    PACKED_SIZE,
-} from "./wasm_constants.mjs";
 import MakeTex from "./MakeTex.mjs";
 
 import oceanVert from "../glsl/ocean_surface/ocean.vert.glsl";
@@ -18,6 +12,7 @@ import Smooth from "./Smooth.mjs";
 // import hueFrag from "./glsl/ocean_surface/huewheel.frag.glsl";
 // import leadrFrag from "./glsl/ocean_surface/leadr.frag.glsl";
 // import toonFrag from "./glsl/ocean_surface/toon.frag.glsl";
+const FILTER_COUNT = 2;
 
 export default class View {
     static readonly waveProps = {
@@ -59,7 +54,6 @@ export default class View {
 
     private posPtr: number;
     private partPtr: number;
-    private renderWavesPromise: Promise<void> = Promise.resolve();
 
     constructor(
         public canvasElem: HTMLCanvasElement,
@@ -67,6 +61,7 @@ export default class View {
         public wasmWaves: WasmWaves,
         public memory: WebAssembly.Memory,
         ptrs: [number, number],
+        public lowPerf: boolean,
     ) {
         [this.posPtr, this.partPtr] = ptrs;
 
@@ -87,7 +82,12 @@ export default class View {
             .map(() => new THREE.BufferAttribute(undefined, 4));
         this.wavePosBufs.forEach((w) => w.setUsage(THREE.StreamDrawUsage));
 
-        this.makeTex = new MakeTex(this.wavePosBufs, this.wavePartialBufs);
+        this.makeTex = new MakeTex(
+            this.wavePosBufs,
+            this.wavePartialBufs,
+            this.wasmWaves.width,
+            FILTER_COUNT,
+        );
 
         this.camera.position.set(0, 0, View.cameraDistance);
 
@@ -133,15 +133,19 @@ export default class View {
     static async MakeView(
         canvasElem: HTMLCanvasElement,
         image: HTMLImageElement,
+        lowPerf: boolean,
     ) {
         const tex = new THREE.Texture(image);
         tex.needsUpdate = true;
 
-        const worker = await WasmWaves.MakeWasmWaves(View.waveProps);
+        const worker = await WasmWaves.MakeWasmWaves({
+            ...View.waveProps,
+            lowPerf,
+        });
         const wasmWavesMem = worker.memory;
         const ptrs = worker.getPtrs();
 
-        return new View(canvasElem, tex, worker, wasmWavesMem, ptrs);
+        return new View(canvasElem, tex, worker, wasmWavesMem, ptrs, lowPerf);
     }
 
     private static makeWaveTextureUvTransform(
@@ -262,6 +266,8 @@ export default class View {
             height = relavantEvent.contentRect.height;
         }
 
+        const lowPerfScale = this.lowPerf ? 0.5 : 1.0;
+
         this.camera.aspect = width / height;
         let cameraZ = View.cameraDistance;
         if (this.camera.aspect >= 1) {
@@ -271,25 +277,28 @@ export default class View {
 
         this.camera.updateProjectionMatrix();
         this.renderer.setPixelRatio(dpr);
-        this.renderer.setSize(width, height, false);
+        this.renderer.setSize(
+            width * lowPerfScale,
+            height * lowPerfScale,
+            false,
+        );
     }
 
     updateGeoBuffers(ptr: number, geoBufs: THREE.BufferAttribute[]) {
         for (let i = 0; i < FILTER_COUNT; i++) {
-            const offset = PACKED_SIZE_BYTES * i;
+            const offset = this.wasmWaves.getPackedSizeBytes() * i;
             const floatView = new Float32Array(
                 this.memory.buffer,
                 ptr + offset,
-                PACKED_SIZE_FLOATS,
+                this.wasmWaves.getPackedSizeFloats(),
             );
             geoBufs[i].array = floatView;
-            (geoBufs[i].count as number) = PACKED_SIZE;
+            (geoBufs[i].count as number) = this.wasmWaves.getPackedSize();
             geoBufs[i].needsUpdate = true;
         }
     }
 
     setParallax(coords: [number, number]) {
-        console.log(coords);
         this.parallaxSmoother.pushValue(coords);
     }
 
@@ -305,15 +314,11 @@ export default class View {
 
     public async update(secs: number, updateWaves: boolean = true) {
         if (updateWaves) {
-            await this.renderWavesPromise;
+            this.wasmWaves.render({
+                time: secs * View.waveProps.timeScale,
+            });
             this.updateGeoBuffers(this.posPtr, this.wavePosBufs);
             this.updateGeoBuffers(this.partPtr, this.wavePartialBufs);
-
-            this.renderWavesPromise = this.renderWavesPromise.then(() =>
-                this.wasmWaves.render({
-                    time: secs * View.waveProps.timeScale,
-                }),
-            );
 
             this.makeTex.render(this.renderer);
         }

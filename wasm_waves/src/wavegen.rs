@@ -10,10 +10,10 @@ use crate::{gamma, const_twid, simd::{mul_complex_f32, splat_complex}};
 use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
 
 const GRAVITY: f32 = 9.807;
-pub const WIDTH: usize = 256;
-pub const HALF_WIDTH: usize = WIDTH/2 + 1;
-pub const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
-pub const SIZE: usize = WIDTH*WIDTH;
+// pub const WIDTH: usize = 256;
+// pub const HALF_WIDTH: usize = WIDTH/2 + 1;
+// pub const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
+// pub const SIZE: usize = WIDTH*WIDTH;
 pub const FILTER_COUNT: usize = 2;
 pub const FACTOR_COUNT: usize = 8;
 pub const HALF_FACTOR_COUNT: usize = FACTOR_COUNT / 2;
@@ -89,13 +89,15 @@ impl WaveWindow {
 }
 
 #[derive(Debug, Clone)]
-pub struct WaveBuffers {
-    static_spectra: Box<[WavePoint; HALF_SIZE]>,
-    timevaried_spectra: Box<[Complex32; HALF_SIZE]>,
-    factors: [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT],
+pub struct WaveBuffers<const N: usize>
+    where [(); (N/2 + 1)*N]: {
+    static_spectra: Box<[WavePoint; (N/2 + 1)*N]>,
+    timevaried_spectra: Box<[Complex32; (N/2 + 1)*N]>,
+    factors: [Box<[[Complex32; 2]; (N/2 + 1)*N]>; HALF_FACTOR_COUNT],
 }
 
-impl Default for WaveBuffers {
+impl<const N: usize> Default for WaveBuffers<N> 
+    where [(); (N/2 + 1)*N]: {
     fn default() -> Self {
         unsafe {
             WaveBuffers { 
@@ -108,7 +110,7 @@ impl Default for WaveBuffers {
 }
 
 #[derive(Debug, Clone)]
-pub struct WaveGen {
+pub struct WaveGen<const N: usize> {
     capillary_depth: f32,
     jonswap_alpha: f32,
     jonswap_gamma: f32,
@@ -131,9 +133,37 @@ pub enum OceanProp {
     DZY = 7
 }
 
-pub type WaveGenOutput = [[Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]; FILTER_COUNT];
+pub trait WaveGenTrait<const N: usize>
+    where [(); (N/2 + 1)*N]: {
+    type WaveGenOutput;
 
-impl WaveGen {
+    fn make_output_buffer() -> Self::WaveGenOutput;
+    fn step(&self, time: f32, wavebuffers: &mut [WaveBuffers<N>; FILTER_COUNT], output_buffer: &mut Self::WaveGenOutput);
+}
+
+impl<const N: usize> WaveGenTrait<N> for WaveGen<N>
+    where [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]: {
+    type WaveGenOutput = [[Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]; FILTER_COUNT];
+
+    fn make_output_buffer() -> Self::WaveGenOutput {
+        [(); FILTER_COUNT].map(|_| [(); HALF_FACTOR_COUNT].map(|_| unsafe { Box::new_uninit().assume_init() }))
+    }
+
+    fn step(&self, time: f32, wavebuffers: &mut [WaveBuffers<N>; FILTER_COUNT], output_buffer: &mut Self::WaveGenOutput) {
+        wavebuffers
+            .iter_mut()
+            .zip_eq(output_buffer.iter_mut())
+            .zip_eq(self.filters.iter())
+            .for_each(|((wavebuf, outbuf), filter)|
+                self.step_one(time, filter, wavebuf, outbuf));
+    }
+}
+
+impl<const N: usize> WaveGen<N> 
+    where [(); (N/2 + 1)*N]: {
+
+    const HALF_SIZE: usize = (N/2 + 1)*N;
+    
     /// Create a ocean wave simulation using some parameters
     /// 
     /// # Arguments
@@ -145,7 +175,7 @@ impl WaveGen {
     /// * `swell` - Wave swell from 0 - 1
     /// * `rad_offset` - canvas rotation in radians
     /// * `windows` - list of wavelength "windows" in meters that sub-FFTs should be performed
-    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, rad_offset: f32, windows: &[f32; FILTER_COUNT*2]) -> WaveGen {
+    pub fn new(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, rad_offset: f32, windows: &[f32; FILTER_COUNT*2]) -> WaveGen<N> {
         let alpha = 0.076*(wind_speed.powi(2) / (GRAVITY*fetch)).abs().powf(0.22);
         let dimless_fetch = GRAVITY*fetch / wind_speed.powi(2);
         let omega_p = TAU*3.5*(GRAVITY / wind_speed)*dimless_fetch.powf(-0.33);
@@ -172,11 +202,7 @@ impl WaveGen {
         self.filters.last().unwrap().get_domain()
     }
 
-    pub fn make_output_buffer() -> WaveGenOutput {
-         [(); FILTER_COUNT].map(|_| [(); HALF_FACTOR_COUNT].map(|_| unsafe { Box::new_uninit().assume_init() }))
-    }
-
-    pub fn make_wavebuffers() -> [WaveBuffers; FILTER_COUNT] {
+    pub fn make_wavebuffers() -> [WaveBuffers<N>; FILTER_COUNT] {
         Default::default()
     }
  
@@ -262,13 +288,13 @@ impl WaveGen {
     }
 
     fn spectral_iterator(&self, domain: f32) -> impl ExactSizeIterator<Item=((f32, f32), f32, usize)> + '_ {
-        (0..HALF_SIZE)
+        (0..Self::HALF_SIZE)
             .into_iter()
             .map(move |i| {
                 // NOTE: outputs are transposed
-                let x = i / WIDTH;
-                let y = i % WIDTH;
-                let y_rev = if y <= WIDTH / 2 { y as isize } else { y as isize - WIDTH as isize };
+                let x = i / N;
+                let y = i % N;
+                let y_rev = if y <= N / 2 { y as isize } else { y as isize - N as isize };
                 let ki = (x as f32) * TAU / domain;
                 let kj = (y_rev as f32) * TAU / domain;
                 let rki = ki*self.rotation_matrix.0 - kj*self.rotation_matrix.1;
@@ -278,7 +304,7 @@ impl WaveGen {
             })
     }
     
-    fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; HALF_SIZE]>) {     
+    fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; (N/2 + 1)*N]>) {     
         let dk = filter.get_dk();   
         let domain = filter.get_domain();
         self.spectral_iterator(domain)
@@ -288,7 +314,7 @@ impl WaveGen {
             .for_each(|(res, elem)| *elem = res);
     }
 
-    fn compute_timevaried(&self, time: f32, in_buffer: &Box<[WavePoint; HALF_SIZE]>, out_buffer: &mut Box<[Complex32; HALF_SIZE]>) {
+    fn compute_timevaried(&self, time: f32, in_buffer: &Box<[WavePoint; (N/2 + 1)*N]>, out_buffer: &mut Box<[Complex32; (N/2 + 1)*N]>) {
         in_buffer
             .iter()
             .map(|w| {
@@ -315,7 +341,7 @@ impl WaveGen {
         }
     }
 
-    fn compute_factors(&self, timevaried: &Box<[Complex32; HALF_SIZE]>, domain: f32, out_buffer: &mut [Box<[[Complex32; 2]; HALF_SIZE]>; HALF_FACTOR_COUNT]) {
+    fn compute_factors(&self, timevaried: &Box<[Complex32; (N/2 + 1)*N]>, domain: f32, out_buffer: &mut [Box<[[Complex32; 2]; (N/2 + 1)*N]>; HALF_FACTOR_COUNT]) {
         [[OceanProp::DX, OceanProp::DY], [OceanProp::HEIGHT, OceanProp::DXY], [OceanProp::DXX, OceanProp::DYY], [OceanProp::DZX, OceanProp::DZY]]
             .iter()
             .zip_eq(out_buffer)
@@ -359,7 +385,7 @@ impl WaveGen {
             // left = (s.re, d.i) - ot
             // right = ((s.re, d.i) + ot)*
             
-            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, WIDTH / 2));
+            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
             let real_conj = f32x4(-0., 0., -0., 0.);
             let conj = f32x4(0., -0., 0., -0.);
             
@@ -455,16 +481,16 @@ impl WaveGen {
         }
     }
 
-    fn transpose_rows_to_cols<T: Copy>(matrix: &[T; HALF_SIZE], out: &mut [T; HALF_SIZE]) {
+    fn transpose_rows_to_cols<T: Copy>(matrix: &[T; (N/2 + 1)*N], out: &mut [T; (N/2 + 1)*N]) {
         const BLOCK_SIZE: usize = 8;
 
-        for i in (0..HALF_WIDTH).step_by(BLOCK_SIZE) {
-            for j in (0..WIDTH).step_by(BLOCK_SIZE) {
+        for i in (0..N / 2 + 1).step_by(BLOCK_SIZE) {
+            for j in (0..N).step_by(BLOCK_SIZE) {
                 // transpose the block beginning at [i,j]
-                for r in i..std::cmp::min(i + BLOCK_SIZE, HALF_WIDTH) {
+                for r in i..std::cmp::min(i + BLOCK_SIZE, N / 2 + 1) {
                     for c in j..j + BLOCK_SIZE {
                         unsafe {
-                            *out.get_unchecked_mut(r + c*HALF_WIDTH) = matrix.get_unchecked(c + r*WIDTH).clone();
+                            *out.get_unchecked_mut(r + c*(N / 2 + 1)) = matrix.get_unchecked(c + r*N).clone();
                         }
                     }
                 }
@@ -472,16 +498,16 @@ impl WaveGen {
         }
     }
 
-    fn compute_fft_2d_2x(input_unpacked: &mut Box<[[Complex32; 2]; HALF_SIZE]>, output_buffer: &mut Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>) {
+    fn compute_fft_2d_2x(input_unpacked: &mut Box<[[Complex32; 2]; (N/2 + 1)*N]>, output_buffer: &mut Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>) {
         // input_unpacked: N*(N/2+1) (transposed)
         // output_packed:  (N/2+1)*N
 
-        let output_as_cmplx = unsafe { std::mem::transmute::<_, &mut [[Complex32; 2]; HALF_SIZE]>(output_buffer.as_mut()) };
+        let output_as_cmplx = unsafe { std::mem::transmute::<_, &mut [[Complex32; 2]; (N/2 + 1)*N]>(output_buffer.as_mut()) };
 
         // pass 1: N/2+1 FFTs which move rows of N -> rows of N
         input_unpacked
-            .chunks_exact(WIDTH)
-            .zip_eq(output_as_cmplx.chunks_exact_mut(WIDTH))
+            .chunks_exact(N)
+            .zip_eq(output_as_cmplx.chunks_exact_mut(N))
             .for_each(|(input_row, output_row)|
                 unsafe { Self::fft_c2c_2x(input_row.as_stride(), output_row) });
 
@@ -490,8 +516,8 @@ impl WaveGen {
 
         // pass 2: N FFTs which move rows of N/2+1 -> rows of N real
         input_unpacked
-            .chunks_exact_mut(HALF_WIDTH)
-            .zip_eq(output_as_cmplx[0..(WIDTH/2 * WIDTH)].chunks_exact_mut(WIDTH/2))
+            .chunks_exact_mut(N/2 + 1)
+            .zip_eq(output_as_cmplx[0..(N/2 * N)].chunks_exact_mut(N/2))
             .for_each(|(input_row, output_row)| {
                 unsafe {
                     // add conjugated signal to itself so F(i) = (x[0], x[1]), (x[2], x[3]) 
@@ -502,7 +528,7 @@ impl WaveGen {
             });
     }
 
-    pub fn precompute_spectra(&self, wavebuffers: &mut [WaveBuffers; FILTER_COUNT]) {
+    pub fn precompute_spectra(&self, wavebuffers: &mut [WaveBuffers<N>; FILTER_COUNT]) {
         self.filters
             .iter()
             .zip_eq(wavebuffers.iter_mut())
@@ -510,7 +536,7 @@ impl WaveGen {
                 self.compute_spectra(&filter, &mut wavebuf.static_spectra))
     }
 
-    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers, output_buffer: &mut [Box<[f32; HALF_SIZE*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]) {
+    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers<N>, output_buffer: &mut [Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
         self.compute_factors(&wavebuf.timevaried_spectra, filter.get_domain(), &mut wavebuf.factors);
 
@@ -519,14 +545,5 @@ impl WaveGen {
             .zip_eq(output_buffer.iter_mut())
             .for_each(|(fac, out)| 
                 Self::compute_fft_2d_2x(fac, out));
-    }
-
-    pub fn step(&self, time: f32, wavebuffers: &mut [WaveBuffers; FILTER_COUNT], output_buffer: &mut WaveGenOutput) {
-        wavebuffers
-            .iter_mut()
-            .zip_eq(output_buffer.iter_mut())
-            .zip_eq(self.filters.iter())
-            .for_each(|((wavebuf, outbuf), filter)|
-                self.step_one(time, filter, wavebuf, outbuf));
     }
 }
