@@ -11,15 +11,15 @@
             content="#0A0A0A"
             media="(prefers-color-scheme: dark)"
         />
-        <link rel="prefetch" href="https://prototypical.pro/assets/wasm_waves_bg-CVBMQLId.wasm" />
+        <link rel="prefetch" href="/assets/wasm_waves_bg-CVBMQLId.wasm" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
             rel="stylesheet"
             href="https://fonts.googleapis.com/css?family=Tilt+Warp|Source+Code+Pro"
         />
-      <script type="module" crossorigin src="https://prototypical.pro/assets/index-i4um04Df.js"></script>
-      <link rel="stylesheet" crossorigin href="https://prototypical.pro/assets/index-KKB4Qhfs.css">
+      <script type="module" crossorigin src="/assets/index-CMIOLEmf.js"></script>
+      <link rel="stylesheet" crossorigin href="/assets/index-BhSaG8ar.css">
     </head>
 
     <body class="overflow-hidden">
@@ -27,11 +27,20 @@
             <div class="relative max-w-full max-xl:h-[65%] xl:aspect-square">
                 <canvas class="absolute w-full h-full" id="canvas"></canvas>
                 <div
+                    class="absolute w-full h-full blur-2xl transition-opacity duration-500 pointer-events-none"
+                    id="preview"
+                >
+                    <img
+                        class="object-cover object-center w-full h-full"
+                        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUBAMAAAB/pwA+AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAwUExURR8dJwkQLVQkISRDM11MMRAnT080TiNOWFtWVINTL5dsYmmHZwMkgGBliIZdjmCKnB7B/ggAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAYdEVYdFNvZnR3YXJlAFBhaW50Lk5FVCA1LjEuMvu8A7YAAAC2ZVhJZklJKgAIAAAABQAaAQUAAQAAAEoAAAAbAQUAAQAAAFIAAAAoAQMAAQAAAAIAAAAxAQIAEAAAAFoAAABphwQAAQAAAGoAAAAAAAAAYAAAAAEAAABgAAAAAQAAAFBhaW50Lk5FVCA1LjEuMgADAACQBwAEAAAAMDIzMAGgAwABAAAAAQAAAAWgBAABAAAAlAAAAAAAAAACAAEAAgAEAAAAUjk4AAIABwAEAAAAMDEwMAAAAADp1fY4ytpsegAAANZJREFUGNMVjzFKA0EYhd8/gZjyf7sZYrkjmMbKIqazEA8wG5lsk4CgJpaRqNsEFDRu2EbByht4AiEHED2NZ3C2+/jg8d6DklSXDSgghSpki5DGamIPGS0TcRhQIxrjRKw/adCl4kP6DpU9d2aGxcEXIlmte7vP31BHc/xZbXKPGOz8rcqnxRGI9rSa7PzerpG8vVyXV2X98Arj7Pyn2tSLDtTOwv3dfL2sQJMVxTgU2xJgL4wvzx/TG1BHF6G7n8pp3DDq+xA3f4C5zQN9PNO0xS+tDPIP5vgqIhNg0DsAAAAASUVORK5CYII="
+                    />
+                </div>
+                <div
                     class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-56 pointer-events-none"
                 >
                     <img
-                        class="object-cover object-center pointer-events-none"
-                        src="https://prototypical.pro/assets/logo-B9u87kpk.png"
+                        class="object-cover object-center"
+                        src="/assets/logo-B9u87kpk.png"
                     />
                 </div>
             </div>
@@ -40,7 +49,7 @@
                     class="w-full relative bottom-8 right-3 xl:bottom-0 xl:right-14 pointer-events-none"
                 >
                     <h1
-                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl text-nowrap select-none clamp absolute pointer-events-none"
+                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl text-nowrap select-none clamp absolute"
                     >
                         PROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         ROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
@@ -95,7 +104,11 @@
             </div>
         </div>
 
+
         <!-- Used by THREE.js later -->
-        <img src="https://prototypical.pro/assets/space-sAxa6eUL.jpg" id="bg" class="hidden" />
+        <div>
+            <img src="/assets/space_sm-BuhlJQ9N.jpg" id="bg_sm" class="hidden" />
+            <img src="/assets/space-BHj4JSpH.jpg" id="bg" class="hidden" />
+        </div>
     </body>
 </html>
