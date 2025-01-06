@@ -32,7 +32,7 @@ async function init() {
 
     // Test device width, for lg displays assume higher performance
     const perfCheck = window.matchMedia("(max-width: 768px)");
-    console.log("Performance check", perfCheck.matches);
+    console.debug("Performance check", perfCheck.matches);
 
     const view = await View.MakeView(
         canvas,
