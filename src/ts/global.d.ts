@@ -1,23 +1,6 @@
+/// <reference types="vite/client" />
+
 // Definitions to let TS understand .vs, .fs, .glsl shader files
-declare module "*.fs" {
-    const value: string;
-    export default value;
-}
-declare module "*.vs" {
-    const value: string;
-    export default value;
-}
-declare module "*.glsl" {
-    const value: string;
-    export default value;
-}
+/// <reference types="vite-plugin-glsl/ext" />
 
-declare module "*.jpg" {
-    const value: string;
-    export default value;
-}
-
-declare module "*.png" {
-    const value: string;
-    export default value;
-}
+declare const __APP_VERSION__: string;

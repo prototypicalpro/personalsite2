@@ -1,3 +1,5 @@
+import "./sentry.mjs";
+
 // import * as Comlink from "comlink";
 
 // import { WorkerHandlersWrap } from "./wasm_worker_types.mjs";

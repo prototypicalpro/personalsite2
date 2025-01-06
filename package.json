@@ -1,11 +1,12 @@
 {
-    "private": true,
+    "version": "2.0.0",
     "scripts": {
         "dev": "concurrently \"rsw watch\" \"vite\"",
         "publish": "rsw build && vite build && gh-pages -d dist --cname prototypical.pro"
     },
     "devDependencies": {
         "@eslint/js": "^9.17.0",
+        "@types/node": "^22.10.5",
         "@types/three": "^0.171.0",
         "@typescript-eslint/eslint-plugin": "^8.18.1",
         "@typescript-eslint/parser": "^8.18.1",
@@ -23,6 +24,7 @@
         "vite-plugin-rsw": "^2.0.11"
     },
     "dependencies": {
+        "@sentry/browser": "^8.47.0",
         "comlink": "^4.4.2",
         "three": "^0.171.0"
     }

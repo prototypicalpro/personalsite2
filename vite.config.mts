@@ -10,5 +10,8 @@ export default defineConfig({
             "Cross-Origin-Opener-Policy": "same-origin",
         },
     },
-    // base: "https://prototypical.pro",
+    define: {
+        __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
+    },
+    base: "https://prototypical.pro",
 });
