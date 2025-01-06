@@ -5,9 +5,6 @@ import View from "./View.mjs";
 
 // import WebWorker from "./wasm_worker.mjs?worker";
 
-const canvas = document.getElementById("canvas") as HTMLCanvasElement;
-const backgroundImage = document.getElementById("bg") as HTMLImageElement;
-
 function clamp(x: number, abs: number) {
     return Math.min(Math.max(x, -abs), abs);
 }
@@ -19,6 +16,13 @@ function angleDiff(a: number, b: number) {
 }
 
 async function init() {
+    const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+    const backgroundImage = document.getElementById("bg") as HTMLImageElement;
+    const backgroundImageSmall = document.getElementById(
+        "bg_sm",
+    ) as HTMLImageElement;
+    const preview = document.getElementById("preview") as HTMLDivElement;
+
     // Create a separate thread from wasm-worker.js and get a proxy to its handlers.
     // This is disabled since GitHub pages does not support the correct headers for now
     // const handlers = await Comlink.wrap<WorkerHandlersWrap>(new WebWorker())
@@ -26,16 +30,23 @@ async function init() {
 
     // Test device width, for lg displays assume higher performance
     const perfCheck = window.matchMedia("(max-width: 768px)");
-    console.log("Performance check", perfCheck);
+    console.log("Performance check", perfCheck.matches);
 
     const view = await View.MakeView(
         canvas,
+        backgroundImageSmall,
         backgroundImage,
         perfCheck.matches,
     );
 
+    let firstFrame = false;
     const cb = async (t: DOMHighResTimeStamp) => {
         await view.update(t / 1000.0, true);
+
+        if (!firstFrame) {
+            firstFrame = true;
+            preview.style.opacity = "0";
+        }
 
         requestAnimationFrame(cb);
     };

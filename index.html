@@ -26,10 +26,19 @@
             <div class="relative max-w-full max-xl:h-[65%] xl:aspect-square">
                 <canvas class="absolute w-full h-full" id="canvas"></canvas>
                 <div
+                    class="absolute w-full h-full blur-2xl transition-opacity duration-500 pointer-events-none"
+                    id="preview"
+                >
+                    <img
+                        class="object-cover object-center w-full h-full"
+                        src="src/img/loading.png"
+                    />
+                </div>
+                <div
                     class="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-32 md:w-56 pointer-events-none"
                 >
                     <img
-                        class="object-cover object-center pointer-events-none"
+                        class="object-cover object-center"
                         src="src/img/logo.png"
                     />
                 </div>
@@ -39,7 +48,7 @@
                     class="w-full relative bottom-8 right-3 xl:bottom-0 xl:right-14 pointer-events-none"
                 >
                     <h1
-                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl text-nowrap select-none clamp absolute pointer-events-none"
+                        class="text-neutral-300 font-['Tilt_Warp'] leading-[0.8] max-xl:text-5xl text-nowrap select-none clamp absolute"
                     >
                         PROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
                         ROTOTYPICALPRO PROTOTYPICALPRO PROTOTYPICALPRO<br />
@@ -94,8 +103,12 @@
             </div>
         </div>
 
-        <!-- Used by THREE.js later -->
-        <img src="src/img/space.jpg" id="bg" class="hidden" />
         <script type="module" src="/src/ts/index.mts"></script>
+
+        <!-- Used by THREE.js later -->
+        <div>
+            <img src="src/img/space_sm.jpg" id="bg_sm" class="hidden" />
+            <img src="src/img/space.jpg" id="bg" class="hidden" />
+        </div>
     </body>
 </html>

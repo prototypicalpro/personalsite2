@@ -3,10 +3,10 @@ import { stripHeader } from "./GLUtils.mjs";
 // import { WorkerHandlers } from "./wasm_worker_types.mjs";
 import WasmWaves from "./WasmWaves.mjs";
 import MakeTex from "./MakeTex.mjs";
+import Smooth from "./Smooth.mjs";
 
 import oceanVert from "../glsl/ocean_surface/ocean.vert.glsl";
 import oilslickFrag from "../glsl/ocean_surface/oilslick.frag.glsl";
-import Smooth from "./Smooth.mjs";
 
 // Shaders I wrote but never used
 // import hueFrag from "./glsl/ocean_surface/huewheel.frag.glsl";
@@ -52,12 +52,17 @@ export default class View {
     resizeObserver: ResizeObserver;
     makeTex: MakeTex;
 
+    private backTexLowRes: THREE.Texture;
+    private backTexHighRes: THREE.Texture;
+    private floorTextureUniform: THREE.Uniform;
+
     private posPtr: number;
     private partPtr: number;
 
     constructor(
         public canvasElem: HTMLCanvasElement,
-        public backTex: THREE.Texture,
+        backImgLowRes: HTMLImageElement,
+        backImgHighRes: HTMLImageElement,
         public wasmWaves: WasmWaves,
         public memory: WebAssembly.Memory,
         ptrs: [number, number],
@@ -91,10 +96,38 @@ export default class View {
 
         this.camera.position.set(0, 0, View.cameraDistance);
 
-        this.backTex.wrapS = THREE.RepeatWrapping;
-        this.backTex.wrapT = THREE.RepeatWrapping;
-        this.backTex.magFilter = THREE.LinearFilter;
-        this.backTex.minFilter = THREE.LinearMipMapLinearFilter;
+        this.backTexLowRes = new THREE.Texture(
+            backImgLowRes,
+            THREE.Texture.DEFAULT_MAPPING,
+            THREE.RepeatWrapping,
+            THREE.RepeatWrapping,
+            THREE.LinearFilter,
+            THREE.LinearMipMapLinearFilter,
+        );
+        this.backTexHighRes = new THREE.Texture(
+            backImgHighRes,
+            THREE.Texture.DEFAULT_MAPPING,
+            THREE.RepeatWrapping,
+            THREE.RepeatWrapping,
+            THREE.LinearFilter,
+            THREE.LinearMipMapLinearFilter,
+        );
+
+        if (backImgHighRes.complete) {
+            this.floorTextureUniform = new THREE.Uniform(this.backTexHighRes);
+            this.backTexHighRes.needsUpdate = true;
+        } else {
+            this.floorTextureUniform = new THREE.Uniform(this.backTexLowRes);
+            this.backTexLowRes.needsUpdate = true;
+
+            backImgHighRes.addEventListener(
+                "load",
+                (() => {
+                    this.floorTextureUniform.value = this.backTexHighRes;
+                    this.backTexHighRes.needsUpdate = true;
+                }).bind(this),
+            );
+        }
 
         this.oceanGeo = new THREE.PlaneGeometry(
             View.getDomain(),
@@ -132,12 +165,10 @@ export default class View {
 
     static async MakeView(
         canvasElem: HTMLCanvasElement,
-        image: HTMLImageElement,
+        lowresImage: HTMLImageElement,
+        highresImage: HTMLImageElement,
         lowPerf: boolean,
     ) {
-        const tex = new THREE.Texture(image);
-        tex.needsUpdate = true;
-
         const worker = await WasmWaves.MakeWasmWaves({
             ...View.waveProps,
             lowPerf,
@@ -145,7 +176,15 @@ export default class View {
         const wasmWavesMem = worker.memory;
         const ptrs = worker.getPtrs();
 
-        return new View(canvasElem, tex, worker, wasmWavesMem, ptrs, lowPerf);
+        return new View(
+            canvasElem,
+            lowresImage,
+            highresImage,
+            worker,
+            wasmWavesMem,
+            ptrs,
+            lowPerf,
+        );
     }
 
     private static makeWaveTextureUvTransform(
@@ -226,9 +265,8 @@ export default class View {
                 new THREE.Vector3(0, 0, -View.waveProps.visualDepth),
             ),
             floorTextureMatrix: new THREE.Uniform(floorTextureMatrix),
-            floorTexture: new THREE.Uniform(this.backTex),
+            floorTexture: this.floorTextureUniform,
             floorSize: new THREE.Uniform(View.getDomain()),
-            floorPixels: new THREE.Uniform(this.backTex.image.width),
             sunDirection: new THREE.Uniform(View.sunDirection),
             sunColor: new THREE.Uniform(View.sunColor),
             skyboxTex: new THREE.Uniform(this.scene.background),

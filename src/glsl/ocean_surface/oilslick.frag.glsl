@@ -87,9 +87,6 @@ vec3 linePlaneIntersection(vec3 linePoint, vec3 lineSlope, vec3 planePoint, vec3
 
 vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float lodOffset) {
     const vec3 macronormal = vec3(0, 0, 1.);
-    const float lodMin = 0.;
-    const float lodBias = 0.;
-    float floorToPixels = floorPixels/floorSize;
 
     // Real-time rendering of refracting transmissive objects with multi-scale rough surfaces Equation 4
     vec3 wt = refract(wi, wn, ETA);
@@ -97,7 +94,7 @@ vec3 sampleRefractLEADR(vec3 wi, vec3 wn, float lodOffset) {
     float J = (pow(abs(dot(wi, wn)) + eta_wtwn, 2.) / (INV_ETA*abs(eta_wtwn)))*pow(dot(wn, macronormal), 3.);
 
     float d = linePlaneDistance(v_position, wt, floorPosition, floorNormal);
-    float lod = 0.72 * log(max(0.0001, J * (0.5 / 1.5))) + lodOffset + lodBias;
+    float lod = 0.72 * log(max(0.0001, J * (0.5 / 1.5))) + lodOffset;
 
     vec3 floorIntersect = v_position + d*wt;
     vec3 floorTex = floorTextureMatrix*vec3(floorIntersect.xy, 1.0);
@@ -169,4 +166,6 @@ void main() {
     vec3 spec3 = sunColor*LEADRSpecular(camera_normal, firstMoments, secMoments, cxy);
     vec3 inputLight = spec3 + ledar3;
     color = vec4(0.2*inputLight + inputLight*OilSlickSampling(camera_normal, firstMoments, secMoments), 1.);
+
+    // color = vec4(ledar3, 0.);
 }
