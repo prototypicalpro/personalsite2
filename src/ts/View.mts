@@ -78,6 +78,8 @@ export default class View {
             powerPreference: "high-performance",
         });
 
+        this.camera.position.set(0, 0, View.cameraDistance);
+
         this.wavePartialBufs = new Array(FILTER_COUNT)
             .fill(0)
             .map(() => new THREE.BufferAttribute(undefined, 4));
@@ -87,30 +89,34 @@ export default class View {
             .map(() => new THREE.BufferAttribute(undefined, 4));
         this.wavePosBufs.forEach((w) => w.setUsage(THREE.StreamDrawUsage));
 
+        const hasLinearFloatTex = this.renderer.extensions.has(
+            "OES_texture_float_linear",
+        );
+
         this.makeTex = new MakeTex(
             this.wavePosBufs,
             this.wavePartialBufs,
             this.wasmWaves.width,
             FILTER_COUNT,
+            hasLinearFloatTex,
         );
 
-        this.camera.position.set(0, 0, View.cameraDistance);
+        const textureParams = [
+            THREE.Texture.DEFAULT_MAPPING,
+            THREE.RepeatWrapping,
+            THREE.RepeatWrapping,
+            ...(hasLinearFloatTex
+                ? [THREE.LinearFilter, THREE.LinearMipMapLinearFilter]
+                : [THREE.NearestFilter, THREE.NearestMipMapNearestFilter]),
+        ];
 
         this.backTexLowRes = new THREE.Texture(
             backImgLowRes,
-            THREE.Texture.DEFAULT_MAPPING,
-            THREE.RepeatWrapping,
-            THREE.RepeatWrapping,
-            THREE.LinearFilter,
-            THREE.LinearMipMapLinearFilter,
+            ...(textureParams as any),
         );
         this.backTexHighRes = new THREE.Texture(
             backImgHighRes,
-            THREE.Texture.DEFAULT_MAPPING,
-            THREE.RepeatWrapping,
-            THREE.RepeatWrapping,
-            THREE.LinearFilter,
-            THREE.LinearMipMapLinearFilter,
+            ...(textureParams as any),
         );
 
         if (backImgHighRes.complete) {

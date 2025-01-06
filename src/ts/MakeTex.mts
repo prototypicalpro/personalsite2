@@ -21,6 +21,7 @@ export default class MakeTex {
         partBufs: THREE.BufferAttribute[],
         private readonly width: number,
         private readonly filterCount: number,
+        hasLinearTextures: boolean,
     ) {
         this.blankCamera = new THREE.Camera();
         this.blankCamera.position.z = 1;
@@ -60,7 +61,9 @@ export default class MakeTex {
             () =>
                 new THREE.WebGLRenderTarget(this.width, this.width, {
                     count: 3,
-                    magFilter: THREE.LinearFilter,
+                    magFilter: hasLinearTextures
+                        ? THREE.LinearFilter
+                        : THREE.NearestFilter,
                     minFilter: THREE.NearestFilter,
                     depthBuffer: false,
                     stencilBuffer: false,
