@@ -18,7 +18,7 @@ After getting the ocean surface working, I played with different methods for ren
 
 Now that I had an ocean and some rendering, all that was left was to make it look nice. I played with several different ideas, including toon shading, hue shift, dynamic skybox, etc. What ended up catching my eye was an oil-slick style shader based on thin-film interference, shown below in the bottom left:
 
-<video controls src="readme/wavesnew.mp4" title="4 Rendering Ideas for Waved"></video>
+![4 Rendering Ideas for Waves. Clockwise from top left: hue shift, toon shader, oil slick, LEADR mapping](readme/wavesnew.png)
 
 On it's own this shader is neat, but it shines when the input to the intensity of the oil slick is reflection _and_ refraction. The final effect is a continuously shimmering ocean surface which occasionally allows the background photo of the milky way to shine through.
 
