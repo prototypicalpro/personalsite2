@@ -2,7 +2,7 @@
 
 ![A screenshot of my personal website. The website frame is split in half, the left half shows a simulated oil slick ocean with a P logo in the middle and the right half reads PROTOTYPICALPRO.](readme/landing.png)
 
-A simulated ocean surface with oil-slick surface. The ocean geometry is computed in Rust WASM, and all rendering is done in WebGL.
+A simulated ocean surface with an oil-slick surface. The ocean geometry is computed in Rust WASM, and all rendering is done in WebGL.
 
 This project is the cumulation of about two years on and off. I started by implementing the ocean surface in GLSL, but that proved too slow as it required too many draw calls to do the required FFTs. As WebGPU was not available by this point, I opted to switch to WASM with SIMD for a performant 2D FFT. There were/are several FFT libraries available that work in WASM, but I ended up implementing my own to learn more about Rust and FFTs.
 
