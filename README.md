@@ -2,7 +2,7 @@
 
 ![A screenshot of my personal website. The website frame is split in half, the left half shows a simulated oil slick ocean with a P logo in the middle and the right half reads PROTOTYPICALPRO.](readme/landing.png)
 
-A simulated ocean surface with oil-slick look. The ocean geometry is computed in Rust WASM, and all rendering is done in WebGL.
+A simulated ocean surface with an oil-slick surface. The ocean geometry is computed in Rust WASM, and all rendering is done in WebGL.
 
 This project is the cumulation of about two years on and off. I started by implementing the ocean surface in GLSL, but that proved too slow as it required too many draw calls to do the required FFTs. As WebGPU was not available by this point, I opted to switch to WASM with SIMD for a performant 2D FFT. There were/are several FFT libraries available that work in WASM, but I ended up implementing my own to learn more about Rust and FFTs.
 
@@ -16,10 +16,10 @@ After getting the ocean surface working, I played with different methods for ren
 
 ![My first working ocean surface, with a simple refraction algorithm showing the cat underneath the waves.](readme/basicsurface.png)
 
-Now that I had an ocean and some rendering, all that was left was to make it look nice. I played with several different ideas, including toon shading, hue shift, dynamic skybox, etc. What ended up catching my eye was an oil-slick style shader based on thin-film interference, shown below in the bottom left:
+Now that I had an ocean and some rendering, all that was left was to make it look nice. I played with several different ideas, including toon shading, hue shift, dynamic skybox, etc. What ended up catching my eye was an oil-slick style shader based on thin-film interference, shown below in the bottom right:
 
 ![4 Rendering Ideas for Waves. Clockwise from top left: hue shift, toon shader, oil slick, LEADR mapping](readme/wavesnew.png)
 
-On it's own this shader is neat, but it shines when the input to the intensity of the oil slick is reflection _and_ refraction. The final effect is a continuously shimmering ocean surface which occasionally allows the background photo of the milky way to shine through.
+On it's own this shader is neat, but it shines when the input to the intensity of the oil slick is reflection _and_ refraction. The final effect is a continuously shimmering ocean surface which occasionally allows the background photo of the Milky Way to shine through.
 
 ![The final ocean surface, showing shimmering blue waves](readme/waves.png)
