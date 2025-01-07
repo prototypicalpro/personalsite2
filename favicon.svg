@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="76.435mm" height="105.41mm" version="1.1" viewBox="0 0 76.435 105.41" xmlns="http://www.w3.org/2000/svg">
-    <style>
-        @media (prefers-color-scheme: dark) {
-            .favicon { stroke: #fff } 
-        }
-    </style>
-    <g transform="translate(-143.6 -123.9)">
-        <g class="favicon" transform="translate(4.1594 -10.532)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
-            <path d="m184.9 194.38c8.0258 0 14.487-6.4612 14.487-14.487v-28.974c0-8.0258-6.4612-14.487-14.487-14.487h-28.974c-8.0258 0-14.487 6.4612-14.487 14.487v72.435h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-14.487z"/>
-            <path d="m199.39 208.87c8.0258 0 14.487-6.4612 14.487-14.487v-28.974c0-8.0258-6.4612-14.487-14.487-14.487h-28.974c-8.0258 0-14.487 6.4612-14.487 14.487v72.435h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-14.487z"/>
-            <path d="m170.41 150.92c-8.0258 0-14.487 6.4612-14.487 14.487v57.948c8.0258 0 14.487-6.4612 14.487-14.487v-14.487h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-28.974z"/>
-        </g>
+<svg width="38.933mm" height="54.006mm" version="1.1" viewBox="0 0 38.933 54.006" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @media (prefers-color-scheme: dark) {
+        .favicon { stroke: #fff } 
+    }
+  </style>
+  <g transform="translate(6.5919 -563.29)">
+    <g class="favicon" transform="matrix(.49633 0 0 .50278 -62.859 414.1)" fill="none" stroke="#000" stroke-opacity=".96429" stroke-width="6.0054">
+      <g transform="translate(39.328 215.28)">
+        <path class="favicon" d="m120.5 142.4c8.0258 0 14.487-6.4612 14.487-14.487v-28.974c0-8.0258-6.4612-14.487-14.487-14.487h-28.974c-8.0258 0-14.487 6.4612-14.487 14.487v72.435h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-14.487z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".96429" stroke-width="6.0054"/>
+      </g>
+      <g transform="translate(53.815 229.77)">
+        <path class="favicon" d="m120.5 142.4c8.0258 0 14.487-6.4612 14.487-14.487v-28.974c0-8.0258-6.4612-14.487-14.487-14.487h-28.974c-8.0258 0-14.487 6.4612-14.487 14.487v72.435h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-14.487z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".96429" stroke-width="6.0054"/>
+      </g>
+      <path d="m145.34 314.22c-8.0258 0-14.487 6.4612-14.487 14.487v57.948c8.0258 0 14.487-6.4612 14.487-14.487v-14.487h14.487c8.0258 0 14.487-6.4612 14.487-14.487v-28.974z" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
+  </g>
 </svg>
