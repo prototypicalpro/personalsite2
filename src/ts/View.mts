@@ -56,6 +56,8 @@ export default class View {
     private backTexHighRes: THREE.Texture;
     private floorTextureUniform: THREE.Uniform;
 
+    private readyPromise: Promise<void>;
+
     private posPtr: number;
     private partPtr: number;
 
@@ -119,12 +121,23 @@ export default class View {
             ...(textureParams as any),
         );
 
+        if (backImgLowRes.complete) {
+            this.readyPromise = Promise.resolve();
+            this.backTexLowRes.needsUpdate = true;
+        } else {
+            this.readyPromise = new Promise((resolve) => {
+                backImgLowRes.addEventListener("load", () => {
+                    this.backTexLowRes.needsUpdate = true;
+                    resolve();
+                });
+            });
+        }
+
         if (backImgHighRes.complete) {
             this.floorTextureUniform = new THREE.Uniform(this.backTexHighRes);
             this.backTexHighRes.needsUpdate = true;
         } else {
             this.floorTextureUniform = new THREE.Uniform(this.backTexLowRes);
-            this.backTexLowRes.needsUpdate = true;
 
             backImgHighRes.addEventListener(
                 "load",
@@ -357,6 +370,8 @@ export default class View {
     }
 
     public async update(secs: number, updateWaves: boolean = true) {
+        await this.readyPromise;
+
         if (updateWaves) {
             this.wasmWaves.render({
                 time: secs * View.waveProps.timeScale,

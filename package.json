@@ -1,5 +1,5 @@
 {
-    "version": "2.0.0",
+    "version": "2.0.1",
     "scripts": {
         "dev": "concurrently \"rsw watch\" \"vite\"",
         "publish": "rsw build && vite build && gh-pages -d dist --cname prototypical.pro"
