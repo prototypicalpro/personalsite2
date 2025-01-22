@@ -1,4 +1,11 @@
-import * as WasmWavesAsm from "wasm_waves";
+import * as WasmWavesAsm from "../../wasm_waves/pkg/wasm_waves.js";
+import * as WasmWavesAsmSafari from "../../wasm_waves/pkg_safari/wasm_waves.js";
+
+type RetBuf =
+    | WasmWavesAsm.RetBuf128
+    | WasmWavesAsm.RetBuf256
+    | WasmWavesAsmSafari.RetBuf128
+    | WasmWavesAsmSafari.RetBuf256;
 
 export default class WasmWaves {
     public static async MakeWasmWaves({
@@ -20,12 +27,29 @@ export default class WasmWaves {
         windows: number[];
         lowPerf: boolean;
     }): Promise<WasmWaves> {
-        const ret = await WasmWavesAsm.default();
+        let ret: any;
+        let WasmNamespace: typeof WasmWavesAsm | typeof WasmWavesAsmSafari;
+        try {
+            ret = await WasmWavesAsm.default();
+            WasmNamespace = WasmWavesAsm;
+        } catch (e) {
+            console.debug(
+                "Got compilation error, switching to wasm V1 build: ",
+                e,
+            );
+            ret = await WasmWavesAsmSafari.default();
+            WasmNamespace = WasmWavesAsmSafari;
+        }
+
+        const seed = new Uint8Array(16);
+        for (let i = 0; i < seed.length; i++) {
+            seed[i] = Math.round(Math.random() * 255);
+        }
 
         let retBuf;
         if (lowPerf) {
-            retBuf = new WasmWavesAsm.RetBuf128();
-            WasmWavesAsm.gen_wavefield_128(
+            retBuf = new WasmNamespace.RetBuf128(seed);
+            WasmNamespace.gen_wavefield_128(
                 depth,
                 wind_speed,
                 fetch,
@@ -36,8 +60,8 @@ export default class WasmWaves {
                 retBuf,
             );
         } else {
-            retBuf = new WasmWavesAsm.RetBuf256();
-            WasmWavesAsm.gen_wavefield_256(
+            retBuf = new WasmNamespace.RetBuf256(seed);
+            WasmNamespace.gen_wavefield_256(
                 depth,
                 wind_speed,
                 fetch,
@@ -54,18 +78,18 @@ export default class WasmWaves {
             ret,
             retBuf,
             lowPerf
-                ? WasmWavesAsm.gen_and_paint_height_field_128
-                : WasmWavesAsm.gen_and_paint_height_field_256,
+                ? WasmNamespace.gen_and_paint_height_field_128
+                : WasmNamespace.gen_and_paint_height_field_256,
             lowPerf ? 128 : 256,
         );
     }
 
     private constructor(
         public readonly memory: WebAssembly.Memory,
-        public readonly module: WasmWavesAsm.InitOutput,
-        private readonly retBuf:
-            | WasmWavesAsm.RetBuf256
-            | WasmWavesAsm.RetBuf128,
+        public readonly module:
+            | WasmWavesAsm.InitOutput
+            | WasmWavesAsmSafari.InitOutput,
+        private readonly retBuf: RetBuf,
         private readonly step: (time: number, retBuf: any) => void,
         readonly width: number,
     ) {}

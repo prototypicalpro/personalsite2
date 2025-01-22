@@ -1,4 +1,5 @@
-use std::f32::consts::{E, PI};
+use core::f32::consts::{E, PI};
+use num_traits::Float;
 
 const GAMMA_R: f32 = 10.900511;
 const GAMMA_DK: &[f32] = &[

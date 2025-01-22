@@ -1,19 +1,19 @@
-use std::f32::consts::{PI, TAU};
-use itertools::{Itertools};
+use core::f32::consts::{PI, TAU};
+use core::arch::wasm32::*;
+use alloc::boxed::Box;
+
+use itertools::Itertools;
 use rand::prelude::*;
 use rand_distr::{Normal, Uniform, num_traits::Zero};
 use num_complex::Complex32;
+use num_traits::Float;
 use strided::{Stride, Strided};
-use std::arch::wasm32::*;
 
 use crate::{gamma, const_twid, simd::{mul_complex_f32, splat_complex}};
 use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
+use crate::cmplx::*;
 
 const GRAVITY: f32 = 9.807;
-// pub const WIDTH: usize = 256;
-// pub const HALF_WIDTH: usize = WIDTH/2 + 1;
-// pub const HALF_SIZE: usize = HALF_WIDTH*WIDTH;
-// pub const SIZE: usize = WIDTH*WIDTH;
 pub const FILTER_COUNT: usize = 2;
 pub const FACTOR_COUNT: usize = 8;
 pub const HALF_FACTOR_COUNT: usize = FACTOR_COUNT / 2;
@@ -33,7 +33,7 @@ pub struct WaveWindow {
     edge3: f32,
     min: f32,
     invert: bool,
-    dk: f32,    
+    dk: f32,
 }
 
 impl Default for WaveWindow {
@@ -119,7 +119,7 @@ pub struct WaveGen<const N: usize> {
     hassleman_raisefactor: f32,
     horvath_swell: f32,
     rotation_matrix: (f32, f32),
-    filters: [WaveWindow; FILTER_COUNT],
+    filters: [WaveWindow; FILTER_COUNT]
 }
 
 pub enum OceanProp {
@@ -194,7 +194,7 @@ impl<const N: usize> WaveGen<N>
             filters: [
                 WaveWindow::new_sharp(windows[0], windows[1]),
                 WaveWindow::new_sharp(windows[2], windows[3]),
-            ],
+            ]
         }
     }
 
@@ -251,15 +251,14 @@ impl<const N: usize> WaveGen<N>
         (omega, domega_dk)
     }
 
-    fn get_deterministic_rng(&self) -> (f32, f32, f32, f32) {
+    fn get_rand_power_angle(rng: &mut SmallRng) -> (f32, f32, f32, f32) {
         let norm = Normal::new(0.0_f32, 1.0_f32).unwrap();
         let distr = Uniform::new(0.0_f32, TAU);
-        let mut rng = thread_rng();
-        
-        (norm.sample(&mut rng), norm.sample(&mut rng), distr.sample(&mut rng), distr.sample(&mut rng))
+
+        (norm.sample(rng), norm.sample(rng), distr.sample(rng), distr.sample(rng))
     }
 
-    fn compute_spectra_impl(&self, dk: f32, k_mag: f32, theta: (f32, f32), filter: f32) -> WavePoint {
+    fn compute_spectra_impl(&self, dk: f32, k_mag: f32, theta: (f32, f32), filter: f32, rng: &mut SmallRng) -> WavePoint {
         if k_mag == 0.0 || filter == 0.0 {
             return WavePoint {
                 pos_spec: Complex32::new(0.0, 0.0),
@@ -278,7 +277,7 @@ impl<const N: usize> WaveGen<N>
         let pos_power = power_base*pos_dir;
         let neg_power = power_base*self.hassleman_direction(omega, theta.1, swell_shape);
     
-        let rng_sample = self.get_deterministic_rng();
+        let rng_sample = Self::get_rand_power_angle(rng);
         let pos_amp = (2.0*pos_power).abs().sqrt()*rng_sample.0*filter;
         let neg_amp = (2.0*neg_power).abs().sqrt()*rng_sample.1*filter;
         let pos_cmplx = Complex32::from_polar(pos_amp, rng_sample.2);
@@ -304,12 +303,12 @@ impl<const N: usize> WaveGen<N>
             })
     }
     
-    fn compute_spectra(&self, filter: &WaveWindow, buffer: &mut Box<[WavePoint; (N/2 + 1)*N]>) {     
+    fn compute_spectra(&self, filter: &WaveWindow, rng: &mut SmallRng, buffer: &mut Box<[WavePoint; (N/2 + 1)*N]>) {     
         let dk = filter.get_dk();   
         let domain = filter.get_domain();
         self.spectral_iterator(domain)
             .map(|((x, y), k_mag, _i)| (k_mag, ((-y).atan2(x), y.atan2(-x)), filter.run(k_mag)))
-            .map(|(k_mag, theta, filter)| self.compute_spectra_impl(dk, k_mag, theta, filter))
+            .map(|(k_mag, theta, filter)| self.compute_spectra_impl(dk, k_mag, theta, filter, rng))
             .zip_eq(buffer.iter_mut())
             .for_each(|(res, elem)| *elem = res);
     }
@@ -487,7 +486,7 @@ impl<const N: usize> WaveGen<N>
         for i in (0..N / 2 + 1).step_by(BLOCK_SIZE) {
             for j in (0..N).step_by(BLOCK_SIZE) {
                 // transpose the block beginning at [i,j]
-                for r in i..std::cmp::min(i + BLOCK_SIZE, N / 2 + 1) {
+                for r in i..core::cmp::min(i + BLOCK_SIZE, N / 2 + 1) {
                     for c in j..j + BLOCK_SIZE {
                         unsafe {
                             *out.get_unchecked_mut(r + c*(N / 2 + 1)) = matrix.get_unchecked(c + r*N).clone();
@@ -502,7 +501,7 @@ impl<const N: usize> WaveGen<N>
         // input_unpacked: N*(N/2+1) (transposed)
         // output_packed:  (N/2+1)*N
 
-        let output_as_cmplx = unsafe { std::mem::transmute::<_, &mut [[Complex32; 2]; (N/2 + 1)*N]>(output_buffer.as_mut()) };
+        let output_as_cmplx = unsafe { core::mem::transmute::<_, &mut [[Complex32; 2]; (N/2 + 1)*N]>(output_buffer.as_mut()) };
 
         // pass 1: N/2+1 FFTs which move rows of N -> rows of N
         input_unpacked
@@ -528,12 +527,12 @@ impl<const N: usize> WaveGen<N>
             });
     }
 
-    pub fn precompute_spectra(&self, wavebuffers: &mut [WaveBuffers<N>; FILTER_COUNT]) {
+    pub fn precompute_spectra(&self, rng: &mut SmallRng, wavebuffers: &mut [WaveBuffers<N>; FILTER_COUNT]) {
         self.filters
             .iter()
             .zip_eq(wavebuffers.iter_mut())
             .for_each(|(filter, wavebuf)| 
-                self.compute_spectra(&filter, &mut wavebuf.static_spectra))
+                self.compute_spectra(&filter, rng, &mut wavebuf.static_spectra))
     }
 
     fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers<N>, output_buffer: &mut [Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]) {

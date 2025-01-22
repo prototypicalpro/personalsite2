@@ -1,6 +1,13 @@
 [build]
-# rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128", "-C", "link-arg=--max-memory=4294967296"]
-rustflags = ["-C", "target-feature=+mutable-globals,+simd128", "-C", "link-arg=--max-memory=4294967296"]
+target = ["wasm32-unknown-unknown", "wasm32v1-none"]
 
 [unstable]
-build-std = ["panic_abort", "std"]
+# build-std = [] # "panic_abort", 
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+lto = true
+opt-level = 3
+panic = "abort"

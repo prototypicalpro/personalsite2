@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
-import { ViteRsw } from "vite-plugin-rsw";
 import glsl from "vite-plugin-glsl";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
-    plugins: [ViteRsw(), glsl()],
+    plugins: [glsl(), wasm(), topLevelAwait()],
     server: {
         headers: {
             "Cross-Origin-Embedder-Policy": "require-corp",

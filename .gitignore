@@ -2,5 +2,6 @@
 /node_modules
 /.rsw
 pkg
+pkg_safari
 target
 old

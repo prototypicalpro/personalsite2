@@ -1,9 +1,0 @@
-cli = "npm"
-
-[[crates]]
-name = "wasm_waves"
-target = "web"
-link = true
-
-[crates.watch]
-# profile = "release"

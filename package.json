@@ -1,31 +1,39 @@
 {
-    "version": "2.0.1",
+    "version": "2.1.0",
     "scripts": {
-        "dev": "concurrently \"rsw watch\" \"vite\"",
-        "publish": "rsw build && vite build && gh-pages -d dist --cname prototypical.pro"
+        "dev": "vite",
+        "rust-build-dev": "cd wasm_waves && cargo build",
+        "rust-build": "cd wasm_waves && cargo build --release",
+        "pack": "cd wasm_waves && wasm-bindgen --out-dir ./pkg --web ./target/wasm32-unknown-unknown/release/wasm_waves.wasm && wasm-bindgen --out-dir ./pkg_safari --web ./target/wasm32v1-none/release/wasm_waves.wasm",
+        "pack-dev": "cd wasm_waves && wasm-bindgen --debug --out-dir ./pkg --web ./target/wasm32-unknown-unknown/debug/wasm_waves.wasm && wasm-bindgen --debug --out-dir ./pkg_safari --web ./target/wasm32v1-none/debug/wasm_waves.wasm",
+        "opt": "cd wasm_waves && wasm-opt -O3 ./pkg/wasm_waves_bg.wasm -o ./pkg/wasm_waves_bg.wasm && wasm-opt -O3 ./pkg_safari/wasm_waves_bg.wasm -o ./pkg_safari/wasm_waves_bg.wasm",
+        "rust": "npm run rust-build && npm run pack && npm run opt",
+        "rust-dev": "npm run rust-build-dev && npm run pack-dev",
+        "publish": "npm run rust && vite build && gh-pages -d dist --cname prototypical.pro"
     },
     "devDependencies": {
-        "@eslint/js": "^9.17.0",
-        "@types/node": "^22.10.5",
-        "@types/three": "^0.171.0",
-        "@typescript-eslint/eslint-plugin": "^8.18.1",
-        "@typescript-eslint/parser": "^8.18.1",
+        "@eslint/js": "^9.18.0",
+        "@types/node": "^22.10.7",
+        "@types/three": "^0.172.0",
+        "@typescript-eslint/eslint-plugin": "^8.21.0",
+        "@typescript-eslint/parser": "^8.21.0",
         "autoprefixer": "^10.4.20",
-        "concurrently": "^9.1.0",
+        "concurrently": "^9.1.2",
         "cross-env": "^7.0.3",
-        "eslint": "^9.17.0",
-        "eslint-config-prettier": "^9.1.0",
+        "eslint": "^9.18.0",
+        "eslint-config-prettier": "^10.0.1",
         "prettier": "^3.4.2",
         "tailwindcss": "^3.4.17",
-        "typescript": "^5.7.2",
-        "typescript-eslint": "^8.19.0",
-        "vite": "^6.0.5",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.21.0",
+        "vite": "^6.0.11",
         "vite-plugin-glsl": "^1.3.1",
-        "vite-plugin-rsw": "^2.0.11"
+        "vite-plugin-top-level-await": "^1.4.4",
+        "vite-plugin-wasm": "^3.4.1"
     },
     "dependencies": {
-        "@sentry/browser": "^8.47.0",
+        "@sentry/browser": "^8.50.0",
         "comlink": "^4.4.2",
-        "three": "^0.171.0"
+        "three": "^0.172.0"
     }
 }

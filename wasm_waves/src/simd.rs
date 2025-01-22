@@ -1,4 +1,4 @@
-use std::{arch::wasm32::*, ops::{Deref, DerefMut}};
+use core::{arch::wasm32::*, ops::{Deref, DerefMut}};
 use num_complex::Complex;
 
 pub trait WasmSimdNum {

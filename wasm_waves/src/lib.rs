@@ -1,14 +1,21 @@
-#![feature(new_uninit)]
 #![feature(generic_const_exprs)]
+#![no_std]
 
-extern crate console_error_panic_hook;
+extern crate alloc;
 
-use std::arch::wasm32::*;
-use std::{pin::Pin, convert::TryFrom};
+use core::arch::wasm32::*;
+use core::{pin::Pin, convert::TryFrom};
+use alloc::boxed::Box;
 
+use rand::SeedableRng;
 use wasm_bindgen::prelude::*;
 use itertools::Itertools;
+use talc::*;
+use spin::Mutex;
+use rand::rngs::SmallRng;
 
+mod panic_hook;
+mod cmplx;
 mod const_twid;
 mod wavegen;
 mod gamma;
@@ -17,8 +24,13 @@ pub mod simd;
 use wavegen::{WaveBuffers, WaveGen, WaveGenTrait, FILTER_COUNT, HALF_FACTOR_COUNT};
 use crate::simd::WasmSimdNum;
 
+static mut ARENA: [u8; 20971520] = [0; 20971520]; // 20MB
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+static ALLOCATOR: Talck<Mutex<()>, ClaimOnOom> = Talc::new(unsafe {
+    // if we're in a hosted environment, the Rust runtime may allocate before
+    // main() is called, so we need to initialize the arena automatically
+    ClaimOnOom::new(Span::from_const_array(core::ptr::addr_of!(ARENA)))
+}).lock();
 
 struct WasmScratch<const N: usize>
     where [(); (N/2 + 1)*N]:,
@@ -52,7 +64,7 @@ trait RetBufTrait<const N: usize>
     [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
     [(); N*N*4]: {
 
-    fn scratch_mut(&mut self) -> &mut WasmScratch<N>;
+    fn scratch_mut(&mut self) -> (&mut WasmScratch<N>, &mut SmallRng);
     fn scratch(&self) -> &WasmScratch<N>;
 
     fn get_partial_out_ptr_base(&self) -> *const f32 {
@@ -66,20 +78,22 @@ trait RetBufTrait<const N: usize>
 
 #[wasm_bindgen]
 pub struct RetBuf256 {
-    scratch: WasmScratch<256>
+    scratch: WasmScratch<256>,
+    rng: SmallRng
 }
 
 impl RetBufTrait<256> for RetBuf256 {
     fn scratch(&self) -> &WasmScratch<256> { &self.scratch }
-    fn scratch_mut(&mut self) -> &mut WasmScratch<256> { &mut self.scratch }
+    fn scratch_mut(&mut self) -> (&mut WasmScratch<256>, &mut SmallRng) { (&mut self.scratch, &mut self.rng) }
 }
 
 #[wasm_bindgen]
 impl RetBuf256 {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> RetBuf256 {
+    pub fn new(rand_seed: &[u8]) -> RetBuf256 {
         RetBuf256 {
-            scratch: WasmScratch::new()
+            scratch: WasmScratch::new(),
+            rng: SmallRng::from_seed(rand_seed.try_into().unwrap())
         }
     }
 
@@ -94,20 +108,22 @@ impl RetBuf256 {
 
 #[wasm_bindgen]
 pub struct RetBuf128 {
-    scratch: WasmScratch<128>
+    scratch: WasmScratch<128>,
+    rng: rand::rngs::SmallRng,
 }
 
 impl RetBufTrait<128> for RetBuf128 {
     fn scratch(&self) -> &WasmScratch<128> { &self.scratch }
-    fn scratch_mut(&mut self) -> &mut WasmScratch<128> { &mut self.scratch }
+    fn scratch_mut(&mut self) -> (&mut WasmScratch<128>, &mut SmallRng) { (&mut self.scratch, &mut self.rng) }
 }
 
 #[wasm_bindgen]
 impl RetBuf128 {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> RetBuf128 {
+    pub fn new(rand_seed: &[u8]) -> RetBuf128 {
         RetBuf128 {
-            scratch: WasmScratch::new()
+            scratch: WasmScratch::new(),
+            rng: SmallRng::from_seed(rand_seed.try_into().unwrap())
         }
     }
 
@@ -120,12 +136,7 @@ impl RetBuf128 {
     }
 }
 
-#[wasm_bindgen(start)]
-pub fn main_fn() {
-    console_error_panic_hook::set_once();
-}
-
-fn gen_wavefield_base<const N: usize> (depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut WasmScratch<N>) 
+fn gen_wavefield_base<const N: usize> (depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], rng: &mut SmallRng, output: &mut WasmScratch<N>) 
     where [(); (N/2 + 1)*N]:,
     [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]:,
     [(); N*N*4]: {
@@ -133,18 +144,20 @@ fn gen_wavefield_base<const N: usize> (depth: f32, wind_speed: f32, fetch: f32, 
     let windows = <[f32; FILTER_COUNT*2]>::try_from(windows).unwrap();
 
     let wavefield = Box::new(WaveGen::new(depth, wind_speed, fetch, damping, swell, swell_off, &windows));
-    wavefield.precompute_spectra(&mut output.wavebuffers);
+    wavefield.precompute_spectra(rng, &mut output.wavebuffers);
     output.field = Some(wavefield);
 }
 
 #[wasm_bindgen]
 pub fn gen_wavefield_128(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf128) {
-    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, output.scratch_mut());
+    let (output, rng) = output.scratch_mut();
+    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, rng, output);
 }
 
 #[wasm_bindgen]
 pub fn gen_wavefield_256(depth: f32, wind_speed: f32, fetch: f32, damping: f32, swell: f32, swell_off: f32, windows: &[f32], output: &mut RetBuf256) {
-    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, output.scratch_mut());
+    let (output, rng) = output.scratch_mut();
+    gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, rng, output);
 }
 
 fn pack_result<const N: usize>(fft_out: &[Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; N*N*4], partial_out: &mut [f32; N*N*4]) {
@@ -201,10 +214,10 @@ fn gen_and_paint_height_field_base<const N: usize>(time: f32, wavefield: &mut Wa
 
 #[wasm_bindgen]
 pub fn gen_and_paint_height_field_256(time: f32, retbuf: &mut RetBuf256) {
-    gen_and_paint_height_field_base(time, retbuf.scratch_mut());
+    gen_and_paint_height_field_base(time, retbuf.scratch_mut().0);
 }
 
 #[wasm_bindgen]
 pub fn gen_and_paint_height_field_128(time: f32, retbuf: &mut RetBuf128) {
-    gen_and_paint_height_field_base(time, retbuf.scratch_mut());
+    gen_and_paint_height_field_base(time, retbuf.scratch_mut().0);
 }
