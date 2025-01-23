@@ -7,7 +7,7 @@
         "rust-build": "cd wasm_waves && cargo build --release",
         "pack": "cd wasm_waves && wasm-bindgen --out-dir ./pkg --web ./target/wasm32-unknown-unknown/release/wasm_waves.wasm && wasm-bindgen --out-dir ./pkg_safari --web ./target/wasm32v1-none/release/wasm_waves.wasm",
         "pack-dev": "cd wasm_waves && wasm-bindgen --keep-debug --out-dir ./pkg --web ./target/wasm32-unknown-unknown/debug/wasm_waves.wasm && wasm-bindgen --keep-debug --out-dir ./pkg_safari --web ./target/wasm32v1-none/debug/wasm_waves.wasm",
-        "pack-prof": "cd wasm_waves && wasm-bindgen --out-dir ./pkg --web ./target/wasm32-unknown-unknown/profiling/wasm_waves.wasm && wasm-bindgen --out-dir ./pkg_safari --web ./target/wasm32v1-none/profiling/wasm_waves.wasm",
+        "pack-prof": "cd wasm_waves && wasm-bindgen --keep-debug --out-dir ./pkg --web ./target/wasm32-unknown-unknown/profiling/wasm_waves.wasm && wasm-bindgen --keep-debug --out-dir ./pkg_safari --web ./target/wasm32v1-none/profiling/wasm_waves.wasm",
         "opt": "cd wasm_waves && wasm-opt -O4 ./pkg/wasm_waves_bg.wasm -o ./pkg/wasm_waves_bg.wasm && wasm-opt -O4 ./pkg_safari/wasm_waves_bg.wasm -o ./pkg_safari/wasm_waves_bg.wasm",
         "opt-prof": "cd wasm_waves && wasm-opt -g -O4 ./pkg/wasm_waves_bg.wasm -o ./pkg/wasm_waves_bg.wasm && wasm-opt -g -O4 ./pkg_safari/wasm_waves_bg.wasm -o ./pkg_safari/wasm_waves_bg.wasm",
         "rust": "npm run rust-build && npm run pack && npm run opt",

@@ -435,31 +435,25 @@ impl<const N: usize> WaveGen<N>
 
     /// Writes the forward DFT of `input` to `output`.
     unsafe fn fft_c2c_2x(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
+        const CONJ: v128 = f32x4(0., -0., 0., -0.);
 
         // break early for a four point butterfly
         if input.len() == 4 {
             let m0 = (&input[0]).load_complex(0);
-            let m1 = (&input[1]).load_complex(0);
             let m2 = (&input[2]).load_complex(0);
-            let m3 = (&input[3]).load_complex(0);
-        
-            const CONJ: v128 = f32x4(0., -0., 0., -0.);
-
             let o0 = f32x4_add(m0, m2);
             let o1 = f32x4_sub(m0, m2);
+
+            let m1 = (&input[1]).load_complex(0);
+            let m3 = (&input[3]).load_complex(0);
             let o2 = f32x4_add(m1, m3);
             let o3conj = v128_xor(f32x4_sub(m1, m3), CONJ);
             let o3_j = u32x4_shuffle::<1, 0, 3, 2>(o3conj, o3conj);
-            
-            let r0 = f32x4_add(o0, o2);
-            let r1 = f32x4_add(o1, o3_j);
-            let r2 = f32x4_sub(o0, o2);
-            let r3 = f32x4_sub(o1, o3_j);
         
-            (&mut output[0]).store_complex(r0, 0);
-            (&mut output[1]).store_complex(r1, 0);
-            (&mut output[2]).store_complex(r2, 0);
-            (&mut output[3]).store_complex(r3, 0);
+            output.get_unchecked_mut(0).store_complex(f32x4_add(o0, o2), 0);
+            output.get_unchecked_mut(2).store_complex(f32x4_sub(o0, o2), 0);
+            output.get_unchecked_mut(1).store_complex(f32x4_add(o1, o3_j), 0);
+            output.get_unchecked_mut(3).store_complex(f32x4_sub(o1, o3_j), 0);
 
             // output[0] = m[0] + m[1] + m[2] + m[3];
             // output[1] = m[0] + m1_j - m[2] - m3_j;
@@ -486,15 +480,12 @@ impl<const N: usize> WaveGen<N>
         // let twiddle = Complex32::from_polar(1.0, (-2.0 * std::f32::consts::PI / input.len() as f32));
         for (i, (mut even, mut odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
             let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_len));
-            let e = even.load_complex(0);
             let o = odd.load_complex(0);
             let odd_twiddle = mul_complex_f32(o, twiddle);
-    
-            let eo = f32x4_add(e, odd_twiddle);
-            let oo = f32x4_sub(e,  odd_twiddle);
 
-            even.store_complex(eo, 0);
-            odd.store_complex(oo, 0);
+            let e = even.load_complex(0);
+            even.store_complex(f32x4_add(e, odd_twiddle), 0);
+            odd.store_complex(f32x4_sub(e,  odd_twiddle), 0);
         }
     }
 
