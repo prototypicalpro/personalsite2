@@ -286,7 +286,23 @@ impl<const N: usize> WaveGen<N>
         WavePoint { pos_spec: pos_cmplx, neg_spec: neg_cmplx, omega: omega }
     }
 
-    fn spectral_iterator(&self, domain: f32) -> impl ExactSizeIterator<Item=((f32, f32), f32, usize)> + '_ {
+    fn f32_minmax(f1: f32, f2: f32) -> (f32, f32) {
+        if f1 < f2 {
+            return (f1, f2);
+        }
+        (f2, f1)
+    }
+
+    fn hypot_approx(f1: f32, f2: f32) -> f32 {
+        if f1.is_zero() || f2.is_zero() {
+            return 0.
+        }
+
+        let (a, b) = Self::f32_minmax(f1.abs(), f2.abs());
+        b + 0.428 * a * a / b
+    }
+
+    fn spectral_iterator(&self, domain: f32, use_approx: bool) -> impl ExactSizeIterator<Item=((f32, f32), f32, usize)> + '_ {
         (0..Self::HALF_SIZE)
             .into_iter()
             .map(move |i| {
@@ -299,14 +315,14 @@ impl<const N: usize> WaveGen<N>
                 let rki = ki*self.rotation_matrix.0 - kj*self.rotation_matrix.1;
                 let rkj = ki*self.rotation_matrix.1 + kj*self.rotation_matrix.0;
 
-                ((rki, rkj), rki.hypot(rkj), i)
+                ((rki, rkj), if use_approx { Self::hypot_approx(rki, rkj) } else { rki.hypot(rkj) }, i)
             })
     }
     
     fn compute_spectra(&self, filter: &WaveWindow, rng: &mut SmallRng, buffer: &mut Box<[WavePoint; (N/2 + 1)*N]>) {     
         let dk = filter.get_dk();   
         let domain = filter.get_domain();
-        self.spectral_iterator(domain)
+        self.spectral_iterator(domain, false)
             .map(|((x, y), k_mag, _i)| (k_mag, ((-y).atan2(x), y.atan2(-x)), filter.run(k_mag)))
             .map(|(k_mag, theta, filter)| self.compute_spectra_impl(dk, k_mag, theta, filter, rng))
             .zip_eq(buffer.iter_mut())
@@ -350,7 +366,7 @@ impl<const N: usize> WaveGen<N>
 
                 timevaried
                     .iter()
-                    .zip_eq(self.spectral_iterator(domain))
+                    .zip_eq(self.spectral_iterator(domain, true))
                     .map(|(h, ((kx, ky), k_mag, _))| {
                         if k_mag != 0.0 
                         { 
