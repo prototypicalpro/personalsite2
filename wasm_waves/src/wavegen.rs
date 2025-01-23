@@ -427,21 +427,23 @@ impl<const N: usize> WaveGen<N>
             let m2 = (&input[2]).load_complex(0);
             let m3 = (&input[3]).load_complex(0);
         
-            let conj = f32x4(0., -0., 0., -0.);
-            let m1conj = v128_xor(m1, conj);
-            let m1_j = u32x4_shuffle::<1, 0, 3, 2>(m1conj, m1conj);
-            let m3conj = v128_xor(m3, conj); 
-            let m3_j = u32x4_shuffle::<1, 0, 3, 2>(m3conj, m3conj);
+            const CONJ: v128 = f32x4(0., -0., 0., -0.);
 
-            let o0 = f32x4_add(f32x4_add(m0, m1), f32x4_add(m2, m3));
-            let o1 = f32x4_sub(f32x4_add(m0, m1_j), f32x4_add(m2, m3_j));
-            let o2 = f32x4_add(f32x4_sub(m0, m1),  f32x4_sub(m2, m3));
-            let o3 = f32x4_sub(f32x4_sub(m0, m1_j), f32x4_sub(m2, m3_j));
+            let o0 = f32x4_add(m0, m2);
+            let o1 = f32x4_sub(m0, m2);
+            let o2 = f32x4_add(m1, m3);
+            let o3conj = v128_xor(f32x4_sub(m1, m3), CONJ);
+            let o3_j = u32x4_shuffle::<1, 0, 3, 2>(o3conj, o3conj);
+            
+            let r0 = f32x4_add(o0, o2);
+            let r1 = f32x4_add(o1, o3_j);
+            let r2 = f32x4_sub(o0, o2);
+            let r3 = f32x4_sub(o1, o3_j);
         
-            (&mut output[0]).store_complex(o0, 0);
-            (&mut output[1]).store_complex(o1, 0);
-            (&mut output[2]).store_complex(o2, 0);
-            (&mut output[3]).store_complex(o3, 0);
+            (&mut output[0]).store_complex(r0, 0);
+            (&mut output[1]).store_complex(r1, 0);
+            (&mut output[2]).store_complex(r2, 0);
+            (&mut output[3]).store_complex(r3, 0);
 
             // output[0] = m[0] + m[1] + m[2] + m[3];
             // output[1] = m[0] + m1_j - m[2] - m3_j;
