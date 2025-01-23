@@ -384,6 +384,8 @@ impl<const N: usize> WaveGen<N>
         // Xe[k] = 0.5(X[k] + X*[N/2-k])
         // Xo[k] = 0.5(X[k] + X*[N/2-k]e^(j2pik/N))
         // Z[k] = Xe[k] + jXo[k]
+        const REAL_CONJ: v128 = f32x4(-0., 0., -0., 0.);
+        const CONJ: v128 = f32x4(0., -0., 0., -0.);
       
         // first and last imaginary MUST be zero
         input[0][0].im = 0.0;
@@ -400,28 +402,25 @@ impl<const N: usize> WaveGen<N>
             // left = (s.re, d.i) - ot
             // right = ((s.re, d.i) + ot)*
             
-            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
-            let real_conj = f32x4(-0., 0., -0., 0.);
-            let conj = f32x4(0., -0., 0., -0.);
-            
-            let vl = left.load_complex(0);
-            let vr = rev_right.load_complex(0);
-            let sd = f32x4_add(vl,  v128_xor(vr, real_conj)); // difference in real, sum in imag
+            let vl = left.load();
+            let vr = rev_right.load();
+            let sd = f32x4_add(vl,  v128_xor(vr, REAL_CONJ)); // difference in real, sum in imag
 
             let si = u32x4_shuffle::<1, 1, 3, 3>(sd, sd);
             let dr = u32x4_shuffle::<0, 0, 2, 2>(sd, sd);
 
+            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
             let st = f32x4_mul(si, twiddle);
             let twidrev = u32x4_shuffle::<1, 0, 3, 2>(twiddle, twiddle);
-            let mt = f32x4_mul(v128_xor(dr, conj), twidrev);
+            let mt = f32x4_mul(v128_xor(dr, CONJ), twidrev);
             let ot = f32x4_add(st, mt);
 
-            let sd_2 = f32x4_add(vl,  v128_xor(vr, conj)); // sum in real, difference in imag
+            let sd_2 = f32x4_add(vl,  v128_xor(vr, CONJ)); // sum in real, difference in imag
             let leftvec = f32x4_sub(sd_2, ot);
-            let rightvec = v128_xor(f32x4_add(sd_2, ot), conj);
+            left.store(leftvec);
 
-            left.store_complex(leftvec, 0);
-            rev_right.store_complex(rightvec, 0);
+            let rightvec = v128_xor(f32x4_add(sd_2, ot), CONJ);
+            rev_right.store(rightvec);
         }
       
         // center element
@@ -439,21 +438,21 @@ impl<const N: usize> WaveGen<N>
 
         // break early for a four point butterfly
         if input.len() == 4 {
-            let m0 = (&input[0]).load_complex(0);
-            let m2 = (&input[2]).load_complex(0);
+            let m0 = (&input[0]).load();
+            let m2 = (&input[2]).load();
             let o0 = f32x4_add(m0, m2);
             let o1 = f32x4_sub(m0, m2);
 
-            let m1 = (&input[1]).load_complex(0);
-            let m3 = (&input[3]).load_complex(0);
+            let m1 = (&input[1]).load();
+            let m3 = (&input[3]).load();
             let o2 = f32x4_add(m1, m3);
             let o3conj = v128_xor(f32x4_sub(m1, m3), CONJ);
             let o3_j = u32x4_shuffle::<1, 0, 3, 2>(o3conj, o3conj);
         
-            output.get_unchecked_mut(0).store_complex(f32x4_add(o0, o2), 0);
-            output.get_unchecked_mut(2).store_complex(f32x4_sub(o0, o2), 0);
-            output.get_unchecked_mut(1).store_complex(f32x4_add(o1, o3_j), 0);
-            output.get_unchecked_mut(3).store_complex(f32x4_sub(o1, o3_j), 0);
+            output.get_unchecked_mut(0).store(f32x4_add(o0, o2));
+            output.get_unchecked_mut(2).store(f32x4_sub(o0, o2));
+            output.get_unchecked_mut(1).store(f32x4_add(o1, o3_j));
+            output.get_unchecked_mut(3).store(f32x4_sub(o1, o3_j));
 
             // output[0] = m[0] + m[1] + m[2] + m[3];
             // output[1] = m[0] + m1_j - m[2] - m3_j;
@@ -480,12 +479,12 @@ impl<const N: usize> WaveGen<N>
         // let twiddle = Complex32::from_polar(1.0, (-2.0 * std::f32::consts::PI / input.len() as f32));
         for (i, (mut even, mut odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
             let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_len));
-            let o = odd.load_complex(0);
+            let o = odd.load();
             let odd_twiddle = mul_complex_f32(o, twiddle);
 
-            let e = even.load_complex(0);
-            even.store_complex(f32x4_add(e, odd_twiddle), 0);
-            odd.store_complex(f32x4_sub(e,  odd_twiddle), 0);
+            let e = even.load();
+            even.store(f32x4_add(e, odd_twiddle));
+            odd.store(f32x4_sub(e,  odd_twiddle));
         }
     }
 
