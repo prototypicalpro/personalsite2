@@ -1,4 +1,4 @@
-use core::{arch::wasm32::*, ops::{Deref, DerefMut}};
+use core::{arch::wasm32::*, ops::DerefMut};
 use num_complex::Complex;
 
 pub trait WasmSimdNum {
@@ -34,12 +34,12 @@ impl WasmSimdArray<f32> for [Complex<f32>; 2] {
 /// or a single complex f64.
 pub trait WasmSimdArrayMut<T: WasmSimdNum>: DerefMut {
     /// Store all complex numbers from a WASM SIMD vector to the array.
-    unsafe fn store(&mut self, vector: T::VectorType);
+    unsafe fn store(self, vector: T::VectorType);
 }
 
 impl WasmSimdArrayMut<f32> for &mut [Complex<f32>; 2] {
     #[inline(always)]
-    unsafe fn store(&mut self, vector: <f32 as WasmSimdNum>::VectorType) {
+    unsafe fn store(self, vector: <f32 as WasmSimdNum>::VectorType) {
         v128_store(self.as_mut_ptr() as *mut v128, vector);
     }
 }
@@ -61,5 +61,3 @@ pub unsafe fn splat_complex(num: &Complex<f32>) -> v128 {
     let tptr: *const Complex<f32> = num;
     v128_load64_splat(tptr as *const u64)
 }
-
-// TODO: conditional SIMD

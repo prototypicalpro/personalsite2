@@ -1,11 +1,10 @@
-import * as WasmWavesAsm from "../../wasm_waves/pkg/wasm_waves.js";
+// import * as WasmWavesAsm from "../../wasm_waves/pkg/wasm_waves.js";
 import * as WasmWavesAsmSafari from "../../wasm_waves/pkg_safari/wasm_waves.js";
 
 type RetBuf =
-    | WasmWavesAsm.RetBuf128
-    | WasmWavesAsm.RetBuf256
-    | WasmWavesAsmSafari.RetBuf128
-    | WasmWavesAsmSafari.RetBuf256;
+    // | WasmWavesAsm.RetBuf128
+    // | WasmWavesAsm.RetBuf256
+    WasmWavesAsmSafari.RetBuf128 | WasmWavesAsmSafari.RetBuf256;
 
 export default class WasmWaves {
     public static async MakeWasmWaves({
@@ -27,19 +26,22 @@ export default class WasmWaves {
         windows: number[];
         lowPerf: boolean;
     }): Promise<WasmWaves> {
-        let ret: any;
-        let WasmNamespace: typeof WasmWavesAsm | typeof WasmWavesAsmSafari;
-        try {
-            ret = await WasmWavesAsm.default();
-            WasmNamespace = WasmWavesAsm;
-        } catch (e) {
-            console.debug(
-                "Got compilation error, switching to wasm V1 build: ",
-                e,
-            );
-            ret = await WasmWavesAsmSafari.default();
-            WasmNamespace = WasmWavesAsmSafari;
-        }
+        // let ret: any;
+        // let WasmNamespace: typeof WasmWavesAsm | typeof WasmWavesAsmSafari;
+        // try {
+        //     ret = await WasmWavesAsm.default();
+        //     WasmNamespace = WasmWavesAsm;
+        // } catch (e) {
+        //     console.debug(
+        //         "Got compilation error, switching to wasm V1 build: ",
+        //         e,
+        //     );
+        //     ret = await WasmWavesAsmSafari.default();
+        //     WasmNamespace = WasmWavesAsmSafari;
+        // }
+
+        const ret = await WasmWavesAsmSafari.default();
+        const WasmNamespace = WasmWavesAsmSafari;
 
         const seed = new Uint8Array(16);
         for (let i = 0; i < seed.length; i++) {
@@ -86,9 +88,8 @@ export default class WasmWaves {
 
     private constructor(
         public readonly memory: WebAssembly.Memory,
-        public readonly module:
-            | WasmWavesAsm.InitOutput
-            | WasmWavesAsmSafari.InitOutput,
+        public readonly module: // | WasmWavesAsm.InitOutput
+        WasmWavesAsmSafari.InitOutput,
         private readonly retBuf: RetBuf,
         private readonly step: (time: number, retBuf: any) => void,
         readonly width: number,

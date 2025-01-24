@@ -11,3 +11,14 @@ impl<T: Float> FromPolar<T> for Complex<T> {
         Self::new(r * theta.cos(), r * theta.sin())
     }
 }
+
+pub trait MulByJ<T: Float> {
+    fn mul_j(&self) -> Self;
+}
+
+impl<T: Float> MulByJ<T> for Complex<T> {
+    #[inline]
+    fn mul_j(&self) -> Self {
+        Self::new(-self.im, self.re)
+    }
+}

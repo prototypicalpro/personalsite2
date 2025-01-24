@@ -1,6 +1,8 @@
 use core::f32::consts::{PI, TAU};
-use core::arch::wasm32::*;
 use alloc::boxed::Box;
+
+#[cfg(not(target_os = "none"))]
+use core::arch::wasm32::*;
 
 use itertools::Itertools;
 use rand::prelude::*;
@@ -9,9 +11,9 @@ use num_complex::Complex32;
 use num_traits::Float;
 use strided::{Stride, Strided};
 
-use crate::{gamma, const_twid, simd::{mul_complex_f32, splat_complex}};
-use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut};
+use crate::{gamma, const_twid};
 use crate::cmplx::*;
+use crate::simd::{WasmSimdNum, WasmSimdArray, WasmSimdArrayMut, mul_complex_f32, splat_complex};
 
 const GRAVITY: f32 = 9.807;
 pub const FILTER_COUNT: usize = 2;
@@ -198,10 +200,6 @@ impl<const N: usize> WaveGen<N>
         }
     }
 
-    pub fn domain(&self) -> f32 {
-        self.filters.last().unwrap().get_domain()
-    }
-
     pub fn make_wavebuffers() -> [WaveBuffers<N>; FILTER_COUNT] {
         Default::default()
     }
@@ -380,47 +378,65 @@ impl<const N: usize> WaveGen<N>
             });
     }
 
-    unsafe fn complex_to_packed_input(input: &mut [[Complex32; 2]]) {
+    #[cfg(not(target_os = "none"))]
+    unsafe fn complex_to_packed_input_impl(left: &mut [Complex32; 2], rev_right: &mut [Complex32; 2], i: usize) {
+        const REAL_CONJ: v128 = f32x4(-0., 0., -0., 0.);
+        const CONJ: v128 = f32x4(0., -0., 0., -0.);
+        // s = x + xr
+        // d = x - xr
+        // st = s.i*t = (x.i + xr.i)*t.ri
+        // mt = (d.r*)*t.ir
+        // ot = st + mt 
+        // left = (s.re, d.i) - ot
+        // right = ((s.re, d.i) + ot)* 
+
+        let vl = left.load();
+        let vr = rev_right.load();
+        let sd = f32x4_add(vl,  v128_xor(vr, REAL_CONJ)); // difference in real, sum in imag
+
+        let si = u32x4_shuffle::<1, 1, 3, 3>(sd, sd);
+        let dr = u32x4_shuffle::<0, 0, 2, 2>(sd, sd);
+
+        let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
+        let st = f32x4_mul(si, twiddle);
+        let twidrev = u32x4_shuffle::<1, 0, 3, 2>(twiddle, twiddle);
+        let mt = f32x4_mul(v128_xor(dr, CONJ), twidrev);
+        let ot = f32x4_add(st, mt);
+
+        let sd_2 = f32x4_add(vl,  v128_xor(vr, CONJ)); // sum in real, difference in imag
+        let leftvec = f32x4_sub(sd_2, ot);
+        left.store(leftvec);
+
+        let rightvec = v128_xor(f32x4_add(sd_2, ot), CONJ);
+        rev_right.store(rightvec);
+    }
+
+    #[cfg(target_os = "none")]
+    unsafe fn complex_to_packed_input_impl(left: &mut [Complex32; 2], rev_right: &mut [Complex32; 2], i: usize) {
         // Xe[k] = 0.5(X[k] + X*[N/2-k])
         // Xo[k] = 0.5(X[k] + X*[N/2-k]e^(j2pik/N))
         // Z[k] = Xe[k] + jXo[k]
-        const REAL_CONJ: v128 = f32x4(-0., 0., -0., 0.);
-        const CONJ: v128 = f32x4(0., -0., 0., -0.);
-      
+
+        let twid = const_twid::lookup_twiddle(i, N / 2);
+        let xe = [left[0] + rev_right[0].conj(), left[1] + rev_right[1].conj()];
+        let xo = [(left[0] - rev_right[0].conj())*twid, (left[1] - rev_right[1].conj())*twid];
+        let twid_r = const_twid::lookup_twiddle(N / 2 - 1 - i, N / 2);
+        let xer = [rev_right[0] + left[0].conj(), rev_right[1] + left[1].conj()];
+        let xor = [(rev_right[0] - left[0].conj())*twid_r, (rev_right[1] - left[1].conj())*twid_r];
+        
+        *left = [xe[0] + xo[0].mul_j(), xe[1] + xo[1].mul_j()];
+        *rev_right = [xer[0] + xor[0].mul_j(), xer[1] + xor[1].mul_j()];
+    }
+
+    unsafe fn complex_to_packed_input(input: &mut [[Complex32; 2]]) {
         // first and last imaginary MUST be zero
         input[0][0].im = 0.0;
         input[0][1].im = 0.0;
       
         let (lhs, rhs) = input.split_at_mut(input.len() / 2);
       
-        for (i, (mut left, mut rev_right)) in lhs.iter_mut().zip(rhs.iter_mut().rev()).enumerate() {
-            // s = x + xr
-            // d = x - xr
-            // st = s.i*t = (x.i + xr.i)*t.ri
-            // mt = (d.r*)*t.ir
-            // ot = st + mt 
-            // left = (s.re, d.i) - ot
-            // right = ((s.re, d.i) + ot)*
-            
-            let vl = left.load();
-            let vr = rev_right.load();
-            let sd = f32x4_add(vl,  v128_xor(vr, REAL_CONJ)); // difference in real, sum in imag
-
-            let si = u32x4_shuffle::<1, 1, 3, 3>(sd, sd);
-            let dr = u32x4_shuffle::<0, 0, 2, 2>(sd, sd);
-
-            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
-            let st = f32x4_mul(si, twiddle);
-            let twidrev = u32x4_shuffle::<1, 0, 3, 2>(twiddle, twiddle);
-            let mt = f32x4_mul(v128_xor(dr, CONJ), twidrev);
-            let ot = f32x4_add(st, mt);
-
-            let sd_2 = f32x4_add(vl,  v128_xor(vr, CONJ)); // sum in real, difference in imag
-            let leftvec = f32x4_sub(sd_2, ot);
-            left.store(leftvec);
-
-            let rightvec = v128_xor(f32x4_add(sd_2, ot), CONJ);
-            rev_right.store(rightvec);
+        for (i, (left, rev_right)) in lhs.iter_mut().zip(rhs.iter_mut().rev()).enumerate() {
+           Self::complex_to_packed_input_impl(left, rev_right, i);
         }
       
         // center element
@@ -432,32 +448,76 @@ impl<const N: usize> WaveGen<N>
       
     }
 
-    /// Writes the forward DFT of `input` to `output`.
-    unsafe fn fft_c2c_2x(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
+    #[cfg(not(target_os = "none"))]
+    unsafe fn fourpt_dft(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
         const CONJ: v128 = f32x4(0., -0., 0., -0.);
 
+        let m0 = (&input[0]).load();
+        let m2 = (&input[2]).load();
+        let o0 = f32x4_add(m0, m2);
+        let o1 = f32x4_sub(m0, m2);
+
+        let m1 = (&input[1]).load();
+        let m3 = (&input[3]).load();
+        let o2 = f32x4_add(m1, m3);
+        let o3conj = v128_xor(f32x4_sub(m1, m3), CONJ);
+        let o3_j = u32x4_shuffle::<1, 0, 3, 2>(o3conj, o3conj);
+    
+        output.get_unchecked_mut(0).store(f32x4_add(o0, o2));
+        output.get_unchecked_mut(2).store(f32x4_sub(o0, o2));
+        output.get_unchecked_mut(1).store(f32x4_add(o1, o3_j));
+        output.get_unchecked_mut(3).store(f32x4_sub(o1, o3_j));
+
+        // output[0] = m[0] + m[1] + m[2] + m[3];
+        // output[1] = m[0] + m1_j - m[2] - m3_j;
+        // output[2] = m[0] - m[1] + m[2] - m[3];
+        // output[3] = m[0] - m1_j - m[2] + m3_j;
+    }
+
+    #[cfg(target_os = "none")]
+    unsafe fn fourpt_dft(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
+        let m0 = input[0];
+        let m1 = input[1];
+        let m2 = input[2];
+        let m3 = input[3];
+
+        *output.get_unchecked_mut(0) = [m0[0] + m1[0] + m2[0] + m3[0], m0[1] + m1[1] + m2[1] + m3[1]];
+        *output.get_unchecked_mut(1) = [m0[0] + m1[0].mul_j() - m2[0] - m3[0].mul_j(), m0[1] + m1[1].mul_j() - m2[1] - m3[1].mul_j()];
+        *output.get_unchecked_mut(2) = [m0[0] - m1[0] + m2[0] - m3[0], m0[1] - m1[1] + m2[1] - m3[1]];
+        *output.get_unchecked_mut(3) = [m0[0] - m1[0].mul_j() - m2[0] + m3[0].mul_j(), m0[1] - m1[1].mul_j() - m2[1] + m3[1].mul_j()];
+
+        // output[0] = m[0] + m[1] + m[2] + m[3];
+        // output[1] = m[0] + m1_j - m[2] - m3_j;
+        // output[2] = m[0] - m[1] + m[2] - m[3];
+        // output[3] = m[0] - m1_j - m[2] + m3_j;
+    }
+
+    #[cfg(not(target_os = "none"))]
+    unsafe fn combine_fft(even: &mut [Complex32; 2], odd: &mut [Complex32; 2], i: usize, half_n: usize) {
+        let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_n));
+        let o = odd.load();
+        let odd_twiddle = mul_complex_f32(o, twiddle);
+
+        let e = even.load();
+        even.store(f32x4_add(e, odd_twiddle));
+        odd.store(f32x4_sub(e,  odd_twiddle));
+    }
+
+    #[cfg(target_os = "none")]
+    unsafe fn combine_fft(even: &mut [Complex32; 2], odd: &mut [Complex32; 2], i: usize, half_n: usize) {
+        let twiddle = const_twid::lookup_twiddle(i, half_n);
+        let odd_twiddle = [odd[0] * twiddle, odd[1] * twiddle];
+        let even_c = even.clone();
+
+        *even = [even_c[0] + odd_twiddle[0], even_c[1] + odd_twiddle[1]];
+        *odd = [even_c[0] - odd_twiddle[0], even_c[1] - odd_twiddle[1]];
+    }
+
+    /// Writes the forward DFT of `input` to `output`.
+    unsafe fn fft_c2c_2x(input: Stride<[Complex32; 2]>, output: &mut [[Complex32; 2]]) {
         // break early for a four point butterfly
         if input.len() == 4 {
-            let m0 = (&input[0]).load();
-            let m2 = (&input[2]).load();
-            let o0 = f32x4_add(m0, m2);
-            let o1 = f32x4_sub(m0, m2);
-
-            let m1 = (&input[1]).load();
-            let m3 = (&input[3]).load();
-            let o2 = f32x4_add(m1, m3);
-            let o3conj = v128_xor(f32x4_sub(m1, m3), CONJ);
-            let o3_j = u32x4_shuffle::<1, 0, 3, 2>(o3conj, o3conj);
-        
-            output.get_unchecked_mut(0).store(f32x4_add(o0, o2));
-            output.get_unchecked_mut(2).store(f32x4_sub(o0, o2));
-            output.get_unchecked_mut(1).store(f32x4_add(o1, o3_j));
-            output.get_unchecked_mut(3).store(f32x4_sub(o1, o3_j));
-
-            // output[0] = m[0] + m[1] + m[2] + m[3];
-            // output[1] = m[0] + m1_j - m[2] - m3_j;
-            // output[2] = m[0] - m[1] + m[2] - m[3];
-            // output[3] = m[0] - m1_j - m[2] + m3_j;
+            Self::fourpt_dft(input, output);
             return;
         }
 
@@ -477,14 +537,8 @@ impl<const N: usize> WaveGen<N>
         //   X_{k+N/2} = E_k - exp(-2πki/N) * O_k
     
         // let twiddle = Complex32::from_polar(1.0, (-2.0 * std::f32::consts::PI / input.len() as f32));
-        for (i, (mut even, mut odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
-            let twiddle = splat_complex(&const_twid::lookup_twiddle(i, half_len));
-            let o = odd.load();
-            let odd_twiddle = mul_complex_f32(o, twiddle);
-
-            let e = even.load();
-            even.store(f32x4_add(e, odd_twiddle));
-            odd.store(f32x4_sub(e,  odd_twiddle));
+        for (i, (even, odd)) in start.iter_mut().zip_eq(end.iter_mut()).enumerate() {
+            Self::combine_fft(even, odd, i, half_len);
         }
     }
 
