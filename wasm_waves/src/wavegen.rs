@@ -382,33 +382,26 @@ impl<const N: usize> WaveGen<N>
     unsafe fn complex_to_packed_input_impl(left: &mut [Complex32; 2], rev_right: &mut [Complex32; 2], i: usize) {
         const REAL_CONJ: v128 = f32x4(-0., 0., -0., 0.);
         const CONJ: v128 = f32x4(0., -0., 0., -0.);
-        // s = x + xr
-        // d = x - xr
-        // st = s.i*t = (x.i + xr.i)*t.ri
-        // mt = (d.r*)*t.ir
-        // ot = st + mt 
-        // left = (s.re, d.i) - ot
-        // right = ((s.re, d.i) + ot)* 
 
         let vl = left.load();
         let vr = rev_right.load();
-        let sd = f32x4_add(vl,  v128_xor(vr, REAL_CONJ)); // difference in real, sum in imag
-
-        let si = u32x4_shuffle::<1, 1, 3, 3>(sd, sd);
-        let dr = u32x4_shuffle::<0, 0, 2, 2>(sd, sd);
-
         let twiddle = splat_complex(&const_twid::lookup_twiddle(i, N / 2));
-        let st = f32x4_mul(si, twiddle);
-        let twidrev = u32x4_shuffle::<1, 0, 3, 2>(twiddle, twiddle);
-        let mt = f32x4_mul(v128_xor(dr, CONJ), twidrev);
-        let ot = f32x4_add(st, mt);
+        let vr_conj = v128_xor(vr, CONJ);
+        let xe = f32x4_add(vl, vr_conj);
+        let xo = f32x4_sub(vl, vr_conj);
+        let xo_twid = mul_complex_f32(xo, twiddle);
 
-        let sd_2 = f32x4_add(vl,  v128_xor(vr, CONJ)); // sum in real, difference in imag
-        let leftvec = f32x4_sub(sd_2, ot);
+        let xo_twid_conj = v128_xor(xo_twid, CONJ);
+        let xo_twid_j = u32x4_shuffle::<1, 0, 3, 2>(xo_twid_conj, xo_twid_conj);
+        let leftvec = f32x4_add(xe, xo_twid_j);
         left.store(leftvec);
 
-        let rightvec = v128_xor(f32x4_add(sd_2, ot), CONJ);
+        let right_conj = f32x4_sub(xe, xo_twid_j);
+        let rightvec = v128_xor(right_conj, CONJ);
         rev_right.store(rightvec);
+
+        // *left = xe + (-xo_twid.im, xo_twid.re) => (xe.re - xo_twid.im, xe.im + xo_twid.re)
+        // *rev_right = (xe.re, -xe.im) + (xo_twid.im, xo_twid.re) => (xe.re + xo_twid.im, -xe.im + xo_twid.re)   
     }
 
     #[cfg(target_os = "none")]
@@ -419,12 +412,13 @@ impl<const N: usize> WaveGen<N>
 
         let twid = const_twid::lookup_twiddle(i, N / 2);
         let xe = [left[0] + rev_right[0].conj(), left[1] + rev_right[1].conj()];
-        let xo = [(left[0] - rev_right[0].conj())*twid, (left[1] - rev_right[1].conj())*twid];
-        let twid_r = const_twid::lookup_twiddle(N / 2 - 1 - i, N / 2);
-        let xer = [rev_right[0] + left[0].conj(), rev_right[1] + left[1].conj()];
-        let xor = [(rev_right[0] - left[0].conj())*twid_r, (rev_right[1] - left[1].conj())*twid_r];
-        
-        *left = [xe[0] + xo[0].mul_j(), xe[1] + xo[1].mul_j()];
+        let xo = [left[0] - rev_right[0].conj(), left[1] - rev_right[1].conj()];
+        let xo_twid = [xo[0]*twid, xo[1]*twid];
+        let twid_r = twid.neg_real();
+        let xer = [xe[0].conj(), xe[1].conj()]; // [rev_right[0] + left[0].conj(), rev_right[1] + left[1].conj()];
+        let xor = [xo_twid[0].conj(), xo_twid[1].conj()]; // [xo[0].neg_real()*twid_r, xo[1].neg_real()*twid_r]; // [(rev_right[0] - left[0].conj())*twid_r, (rev_right[1] - left[1].conj())*twid_r];
+
+        *left = [xe[0] + xo_twid[0].mul_j(), xe[1] + xo_twid[1].mul_j()];
         *rev_right = [xer[0] + xor[0].mul_j(), xer[1] + xor[1].mul_j()];
     }
 

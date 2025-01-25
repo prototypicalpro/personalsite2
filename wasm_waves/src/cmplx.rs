@@ -22,3 +22,14 @@ impl<T: Float> MulByJ<T> for Complex<T> {
         Self::new(-self.im, self.re)
     }
 }
+
+pub trait NegReal<T: Float> {
+    fn neg_real(&self) -> Self;
+}
+
+impl<T: Float> NegReal<T> for Complex<T> {
+    #[inline]
+    fn neg_real(&self) -> Self {
+        Self::new(-self.re, self.im)
+    }
+}

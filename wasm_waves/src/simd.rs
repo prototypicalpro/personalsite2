@@ -25,7 +25,7 @@ pub trait WasmSimdArray<T: WasmSimdNum> {
 impl WasmSimdArray<f32> for [Complex<f32>; 2] {
     #[inline(always)]
     unsafe fn load(&self) -> <f32 as WasmSimdNum>::VectorType {
-        v128_load(self.as_ptr() as *const v128)
+        *(self.as_ptr() as *const v128)
     }
 }
 
