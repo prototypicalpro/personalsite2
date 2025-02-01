@@ -10,6 +10,7 @@ use rand_distr::{Normal, Uniform, num_traits::Zero};
 use num_complex::Complex32;
 use num_traits::Float;
 use strided::{Stride, Strided};
+use aligned_array::{Aligned, A16};
 
 use crate::{gamma, const_twid};
 use crate::cmplx::*;
@@ -93,9 +94,9 @@ impl WaveWindow {
 #[derive(Debug, Clone)]
 pub struct WaveBuffers<const N: usize>
     where [(); (N/2 + 1)*N]: {
-    static_spectra: Box<[WavePoint; (N/2 + 1)*N]>,
-    timevaried_spectra: Box<[Complex32; (N/2 + 1)*N]>,
-    factors: [Box<[[Complex32; 2]; (N/2 + 1)*N]>; HALF_FACTOR_COUNT],
+    static_spectra: Box<Aligned<A16, [WavePoint; (N/2 + 1)*N]>>,
+    timevaried_spectra: Box<Aligned<A16, [Complex32; (N/2 + 1)*N]>>,
+    factors: [Box<Aligned<A16, [[Complex32; 2]; (N/2 + 1)*N]>>; HALF_FACTOR_COUNT],
 }
 
 impl<const N: usize> Default for WaveBuffers<N> 
@@ -145,7 +146,7 @@ pub trait WaveGenTrait<const N: usize>
 
 impl<const N: usize> WaveGenTrait<N> for WaveGen<N>
     where [(); (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]: {
-    type WaveGenOutput = [[Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]; FILTER_COUNT];
+    type WaveGenOutput = [[Box<Aligned<A16, [f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>>; HALF_FACTOR_COUNT]; FILTER_COUNT];
 
     fn make_output_buffer() -> Self::WaveGenOutput {
         [(); FILTER_COUNT].map(|_| [(); HALF_FACTOR_COUNT].map(|_| unsafe { Box::new_uninit().assume_init() }))
@@ -317,7 +318,7 @@ impl<const N: usize> WaveGen<N>
             })
     }
     
-    fn compute_spectra(&self, filter: &WaveWindow, rng: &mut SmallRng, buffer: &mut Box<[WavePoint; (N/2 + 1)*N]>) {     
+    fn compute_spectra(&self, filter: &WaveWindow, rng: &mut SmallRng, buffer: &mut Box<Aligned<A16, [WavePoint; (N/2 + 1)*N]>>) {     
         let dk = filter.get_dk();   
         let domain = filter.get_domain();
         self.spectral_iterator(domain, false)
@@ -327,7 +328,7 @@ impl<const N: usize> WaveGen<N>
             .for_each(|(res, elem)| *elem = res);
     }
 
-    fn compute_timevaried(&self, time: f32, in_buffer: &Box<[WavePoint; (N/2 + 1)*N]>, out_buffer: &mut Box<[Complex32; (N/2 + 1)*N]>) {
+    fn compute_timevaried(&self, time: f32, in_buffer: &Box<Aligned<A16, [WavePoint; (N/2 + 1)*N]>>, out_buffer: &mut Box<Aligned<A16, [Complex32; (N/2 + 1)*N]>>) {
         in_buffer
             .iter()
             .map(|w| {
@@ -354,7 +355,7 @@ impl<const N: usize> WaveGen<N>
         }
     }
 
-    fn compute_factors(&self, timevaried: &Box<[Complex32; (N/2 + 1)*N]>, domain: f32, out_buffer: &mut [Box<[[Complex32; 2]; (N/2 + 1)*N]>; HALF_FACTOR_COUNT]) {
+    fn compute_factors(&self, timevaried: &Box<Aligned<A16, [Complex32; (N/2 + 1)*N]>>, domain: f32, out_buffer: &mut [Box<Aligned<A16, [[Complex32; 2]; (N/2 + 1)*N]>>; HALF_FACTOR_COUNT]) {
         [[OceanProp::DX, OceanProp::DY], [OceanProp::HEIGHT, OceanProp::DXY], [OceanProp::DXX, OceanProp::DYY], [OceanProp::DZX, OceanProp::DZY]]
             .iter()
             .zip_eq(out_buffer)
@@ -427,7 +428,7 @@ impl<const N: usize> WaveGen<N>
         input[0][0].im = 0.0;
         input[0][1].im = 0.0;
       
-        let (lhs, rhs) = input.split_at_mut(input.len() / 2);
+        let (lhs, rhs) = input.split_at_mut_unchecked(input.len() / 2);
       
         for (i, (left, rev_right)) in lhs.iter_mut().zip(rhs.iter_mut().rev()).enumerate() {
            Self::complex_to_packed_input_impl(left, rev_right, i);
@@ -518,7 +519,7 @@ impl<const N: usize> WaveGen<N>
         // split the input into two arrays of alternating elements ("decimate in time")
         let (evens, odds) = input.substrides2();
         // break the output into two halves (front and back, not alternating)
-        let (start, end) = output.split_at_mut(input.len() / 2);
+        let (start, end) = output.split_at_mut_unchecked(input.len() / 2);
         let half_len = start.len();
 
         // recursively perform two FFTs on alternating elements of the input, writing the
@@ -553,7 +554,7 @@ impl<const N: usize> WaveGen<N>
         }
     }
 
-    fn compute_fft_2d_2x(input_unpacked: &mut Box<[[Complex32; 2]; (N/2 + 1)*N]>, output_buffer: &mut Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>) {
+    fn compute_fft_2d_2x(input_unpacked: &mut Box<Aligned<A16, [[Complex32; 2]; (N/2 + 1)*N]>>, output_buffer: &mut Box<Aligned<A16, [f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>>) {
         // input_unpacked: N*(N/2+1) (transposed)
         // output_packed:  (N/2+1)*N
 
@@ -591,7 +592,7 @@ impl<const N: usize> WaveGen<N>
                 self.compute_spectra(&filter, rng, &mut wavebuf.static_spectra))
     }
 
-    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers<N>, output_buffer: &mut [Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT]) {
+    fn step_one(&self, time: f32, filter: &WaveWindow, wavebuf: &mut WaveBuffers<N>, output_buffer: &mut [Box<Aligned<A16, [f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>>; HALF_FACTOR_COUNT]) {
         self.compute_timevaried(time, &wavebuf.static_spectra, &mut wavebuf.timevaried_spectra);
         self.compute_factors(&wavebuf.timevaried_spectra, filter.get_domain(), &mut wavebuf.factors);
 

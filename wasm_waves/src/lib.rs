@@ -5,6 +5,7 @@ extern crate alloc;
 
 use core::arch::wasm32::*;
 use core::{pin::Pin, convert::TryFrom};
+use aligned_array::{Aligned, A16};
 use alloc::boxed::Box;
 
 use rand::SeedableRng;
@@ -160,7 +161,7 @@ pub fn gen_wavefield_256(depth: f32, wind_speed: f32, fetch: f32, damping: f32, 
     gen_wavefield_base(depth, wind_speed, fetch, damping, swell, swell_off, windows, rng, output);
 }
 
-fn pack_result<const N: usize>(fft_out: &[Box<[f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>; HALF_FACTOR_COUNT], pos_out: &mut [f32; N*N*4], partial_out: &mut [f32; N*N*4]) {
+fn pack_result<const N: usize>(fft_out: &[Box<Aligned<A16, [f32; (N/2 + 1)*N*f32::COMPLEX_PER_VECTOR*2]>>; HALF_FACTOR_COUNT], pos_out: &mut [f32; N*N*4], partial_out: &mut [f32; N*N*4]) {
     for i in (0..N*N).step_by(2) {
         unsafe {
             let dxdy = v128_load(fft_out[0].as_ptr().add(i*2) as *const v128); // let (dx0, dx1, dy0, dy1)
